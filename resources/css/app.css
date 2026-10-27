@@ -2,8 +2,198 @@
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
+@source '../js';
 
-@theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+:root {
+    --bg: #f7f8fa;
+    --surface: #ffffff;
+    --line: #e5e7eb;
+    --ink: #111827;
+    --muted: #4b5563;
+    --accent: #4f46e5;
+    --accent-dark: #3730a3;
+    --accent-soft: #eef2ff;
+}
+
+.dark {
+    --bg: #0f1115;
+    --surface: #171a21;
+    --line: #262b36;
+    --ink: #e5e7eb;
+    --muted: #9aa3b2;
+    --accent-soft: #1e1b4b;
+}
+
+@theme inline {
+    --font-sans: 'Inter Variable', system-ui, sans-serif;
+    --color-bg: var(--bg);
+    --color-surface: var(--surface);
+    --color-line: var(--line);
+    --color-ink: var(--ink);
+    --color-muted: var(--muted);
+    --color-accent: var(--accent);
+    --color-accent-dark: var(--accent-dark);
+    --color-accent-soft: var(--accent-soft);
+}
+
+body {
+    @apply bg-bg font-sans text-[12px] text-ink antialiased;
+}
+
+@layer components {
+
+    /* Chhote 3D buttons */
+    .btn {
+        @apply inline-flex h-6 cursor-pointer items-center rounded-md border px-3 text-[11px] font-medium;
+        background: linear-gradient(#fff, #eceef2);
+        border-color: #cdd2da #cdd2da #b4bbc6;
+        box-shadow: 0 1px 0 #b4bbc6, inset 0 1px 0 #fff;
+        color: #1f2937;
+    }
+
+    .btn-primary {
+        background: linear-gradient(#6366f1, #4f46e5);
+        border-color: #4338ca #4338ca #3730a3;
+        box-shadow: 0 1px 0 #3730a3, inset 0 1px 0 rgba(255, 255, 255, 0.25);
+        color: #fff;
+    }
+
+    .btn-danger {
+        background: linear-gradient(#ef4444, #dc2626);
+        border-color: #b91c1c #b91c1c #991b1b;
+        box-shadow: 0 1px 0 #991b1b, inset 0 1px 0 rgba(255, 255, 255, 0.25);
+        color: #fff;
+    }
+
+    /* Sub-navigation ke button-numa items */
+    .nav-btn {
+        @apply inline-flex h-7 flex-none items-center whitespace-nowrap rounded-md border border-line bg-surface px-3 text-[12px] font-medium text-ink/80;
+        box-shadow: 0 1px 0 #d9dde4;
+    }
+
+    .nav-btn:hover {
+        border-color: #9ca3af;
+        @apply text-ink;
+    }
+
+    .nav-btn[aria-current='page'] {
+        @apply border-accent bg-accent-soft font-semibold text-accent-dark;
+        box-shadow: 0 1px 0 #a5b4fc;
+    }
+
+    .btn:active {
+        transform: translateY(1px);
+        box-shadow: none;
+    }
+
+    .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .btn-icon {
+        @apply w-6 justify-center px-0;
+    }
+
+    .field[readonly] {
+        @apply bg-bg text-ink/80;
+    }
+
+    /* Form fields */
+    .field {
+        @apply h-7 w-full rounded-md border border-line bg-surface px-2 text-[12px] text-ink placeholder:text-muted;
+        box-shadow: inset 0 1px 1px rgb(0 0 0 / 0.06);
+    }
+
+    .field:focus-visible {
+        @apply border-accent outline-none ring-1 ring-accent;
+    }
+
+    .field[aria-invalid='true'] {
+        border-color: #dc2626;
+    }
+}
+
+/* Modal: upar se utar kar aaye */
+dialog.modal {
+    margin: 8vh auto auto;
+}
+
+dialog.modal[open] {
+    animation: modal-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+dialog.modal[open]::backdrop {
+    animation: backdrop-in 220ms ease-out;
+}
+
+dialog.modal.closing {
+    animation: modal-out 180ms ease-in forwards;
+}
+
+dialog.modal.closing::backdrop {
+    animation: backdrop-out 180ms ease-in forwards;
+}
+
+@keyframes modal-in {
+    from {
+        opacity: 0;
+        transform: translateY(-32px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes modal-out {
+    from {
+        opacity: 1;
+        transform: none;
+    }
+
+    to {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+}
+
+@keyframes backdrop-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes backdrop-out {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    dialog.modal[open],
+    dialog.modal[open]::backdrop,
+    dialog.modal.closing,
+    dialog.modal.closing::backdrop {
+        animation: none;
+    }
+}
+
+/* Andar scroll, scrollbar nazar na aaye */
+.noscroll {
+    scrollbar-width: none;
+}
+
+.noscroll::-webkit-scrollbar {
+    display: none;
 }
