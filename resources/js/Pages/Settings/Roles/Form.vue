@@ -12,6 +12,7 @@ import PermissionMatrix from '@core/ui/PermissionMatrix.vue'
 import ConfirmDialog from '@core/ui/ConfirmDialog.vue'
 import StatusBadge from '@core/ui/StatusBadge.vue'
 import { useCan } from '@core/composables/useCan'
+import { useUnsavedGuard } from '@core/composables/useUnsavedGuard'
 
 defineOptions({ layout: AppShell })
 const props = defineProps({ role: Object, groups: Array, granted: Array })
@@ -19,6 +20,7 @@ const props = defineProps({ role: Object, groups: Array, granted: Array })
 const can = useCan()
 const editing = computed(() => !!props.role)
 const form = useForm({ name: props.role?.name ?? '', permissions: [...props.granted] })
+useUnsavedGuard(() => form.isDirty)
 const deleting = ref(false)
 const canDelete = computed(() => editing.value && !props.role.system && props.role.users === 0 && can('settings.roles.delete'))
 

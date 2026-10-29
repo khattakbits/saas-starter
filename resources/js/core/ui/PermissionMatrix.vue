@@ -1,14 +1,21 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps({ groups: { type: Array, required: true }, readonly: Boolean })
 const model = defineModel({ type: Array, default: () => [] })
 
+const q = ref('')
 const granted = computed(() => new Set(model.value))
 const keyOf = (row, a) => `${row.key}.${a}`
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1)
 const rowNames = row => row.actions.map(a => keyOf(row, a))
-const groupNames = g => g.rows.flatMap(rowNames)
+
+const visibleRows = g => {
+    const t = q.value.trim().toLowerCase()
+    return t ? g.rows.filter(r => `${g.label} ${r.label} ${r.key}`.toLowerCase().includes(t)) : g.rows
+}
+const visibleGroups = computed(() => props.groups.filter(g => visibleRows(g).length))
+const groupNames = g => visibleRows(g).flatMap(rowNames)
 const countIn = names => names.filter(n => granted.value.has(n)).length
 
 const commit = next => (model.value = [...next])
@@ -39,7 +46,12 @@ const toggleGroup = g => { const names = groupNames(g); setMany(names, countIn(n
 
 <template>
     <div class="flex flex-col gap-3">
-        <div v-for="g in groups" :key="g.key" class="overflow-hidden rounded-md border border-line">
+        <input v-model="q" type="search" placeholder="Search permissions..." aria-label="Search permissions"
+            class="field w-64" />
+
+        <p v-if="!visibleGroups.length" class="py-4 text-center text-muted">No matching permissions</p>
+
+        <div v-for="g in visibleGroups" :key="g.key" class="overflow-hidden rounded-md border border-line">
             <div class="flex items-center justify-between bg-bg/70 px-3 py-2">
                 <label class="flex items-center gap-2 font-semibold">
                     <input type="checkbox" class="size-3.5 accent-accent"
@@ -60,7 +72,7 @@ const toggleGroup = g => { const names = groupNames(g); setMany(names, countIn(n
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="r in g.rows" :key="r.key"
+                    <tr v-for="r in visibleRows(g)" :key="r.key"
                         class="border-b border-line/60 last:border-b-0 hover:bg-accent-soft/40">
                         <th scope="row" class="px-3 py-1.5 text-left font-medium">{{ r.label }}</th>
                         <td v-for="c in g.columns" :key="c" class="text-center">

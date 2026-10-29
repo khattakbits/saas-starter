@@ -2,6 +2,7 @@
 
 namespace App\Modules\Settings\Http\Resources;
 
+use App\Core\Support\Authority;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -9,15 +10,18 @@ class RoleRow extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $actor = $request->user();
         $system = $this->name === 'super-admin';
+        $editable = $actor ? Authority::canEditRole($actor, $this->resource) : false;
 
         return [
             'id' => $this->id,
             'name' => $this->name,
-            'users' => (int) ($this->users_count ?? 0),
-            'permissions' => (int) ($this->permissions_count ?? 0),
+            'users' => $this->users_count,
+            'permissions' => $this->permissions_count,
             'system' => $system,
-            'type' => $system ? 'Full access' : 'Custom',
+            'editable' => $editable,
+            'deletable' => ! $system && $editable && $this->users_count === 0,
         ];
     }
 }

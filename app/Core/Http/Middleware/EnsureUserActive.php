@@ -12,7 +12,7 @@ class EnsureUserActive
     {
         $user = $request->user();
 
-        if ($user && !$user->is_active) {
+        if ($user && $user->is_active === false) {
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
@@ -23,6 +23,9 @@ class EnsureUserActive
 
             return redirect('/login')->with('error', 'Your account has been disabled.');
         }
+
+        // Roles/permissions sirf login user ke liye, aur sirf aik baar (har User query par nahi)
+        $user?->loadMissing('roles.permissions', 'permissions');
 
         return $next($request);
     }

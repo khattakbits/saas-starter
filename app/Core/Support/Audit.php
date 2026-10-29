@@ -16,12 +16,39 @@ final class Audit
             'user_id' => $user?->id,
             'user_name' => $user?->name,
             'event' => $event,
-            'subject_type' => $subject ? Str::snake(class_basename($subject)) : null,
+            'subject_type' => $subject
+                ? (method_exists($subject, 'docType') ? $subject->docType() : Str::snake(class_basename($subject)))
+                : null,
             'subject_id' => $subject?->getKey(),
             'subject_label' => $label ? mb_substr($label, 0, 190) : null,
             'meta' => $meta ?: null,
             'ip' => request()->ip(),
+            'user_agent' => mb_substr((string) request()->userAgent(), 0, 255) ?: null,
             'created_at' => now(),
         ]);
+    }
+
+    /**
+     * Pehle/baad ke do arrays ka farq. Scalar: ['from' => .., 'to' => ..], list: ['added' => [..], 'removed' => [..]]
+     */
+    public static function changes(array $before, array $after): array
+    {
+        $out = [];
+
+        foreach ($after as $key => $new) {
+            $old = $before[$key] ?? null;
+
+            if (is_array($new) || is_array($old)) {
+                $added = array_values(array_diff((array) $new, (array) $old));
+                $removed = array_values(array_diff((array) $old, (array) $new));
+                if ($added || $removed) {
+                    $out[$key] = ['added' => $added, 'removed' => $removed];
+                }
+            } elseif ($old !== $new) {
+                $out[$key] = ['from' => $old, 'to' => $new];
+            }
+        }
+
+        return $out;
     }
 }

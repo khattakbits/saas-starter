@@ -11,7 +11,7 @@ import Select from '@core/ui/Select.vue'
 import StatusBadge from '@core/ui/StatusBadge.vue'
 
 defineOptions({ layout: AppShell })
-const props = defineProps({ settings: Object, canEdit: Boolean })
+const props = defineProps({ settings: Object, canEdit: Boolean, timezones: Array })
 
 const form = useForm({ ...props.settings })
 const pageSizes = [20, 100, 500, 2500].map(n => ({ value: String(n), label: `${n} rows` }))
@@ -51,6 +51,24 @@ const save = () => form.put('/settings/system', { preserveScroll: true, onSucces
                             :error="form.errors.default_page_size" v-slot="{ id }">
                             <Select :id="id" v-model="form.default_page_size" :options="pageSizes"
                                 :disabled="!canEdit" />
+                        </Field>
+                    </FormGrid>
+                </FormSection>
+                <FormSection title="Data retention" icon="trash">
+                    <FormGrid :cols="3">
+                        <Field label="Keep deleted documents for" size="md"
+                            hint="After this, the Recycle Bin empties itself" :error="form.errors.recycle_bin_days"
+                            v-slot="{ id }">
+                            <Select :id="id" v-model="form.recycle_bin_days" :disabled="!canEdit"
+                                :options="[{ value: '7', label: '7 days' }, { value: '30', label: '30 days' }, { value: '90', label: '90 days' }, { value: '365', label: '1 year' }, { value: '0', label: 'Never' }]" />
+                        </Field>
+                    </FormGrid>
+                </FormSection>
+                <FormSection title="Regional">
+                    <FormGrid>
+                        <Field label="Display timezone" hint="Times are stored in UTC and shown in this timezone"
+                            :error="form.errors.timezone" v-slot="{ id }">
+                            <Select :id="id" v-model="form.timezone" :options="timezones" :disabled="!canEdit" />
                         </Field>
                     </FormGrid>
                 </FormSection>

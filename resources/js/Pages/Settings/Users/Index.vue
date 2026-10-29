@@ -11,6 +11,9 @@ import ConfirmDialog from '@core/ui/ConfirmDialog.vue'
 import Icon from '@core/ui/Icon.vue'
 import { useCan } from '@core/composables/useCan'
 import { useServerList } from '@core/composables/useServerList'
+import { useFormat } from '@core/composables/useFormat'
+
+const { dateTime } = useFormat()
 
 defineOptions({ layout: AppShell })
 const props = defineProps({ roles: Array })
@@ -81,6 +84,8 @@ function runBulk() {
             </template>
 
             <template #cell-name="{ value }"><span class="font-medium">{{ value }}</span></template>
+            <template #cell-last_login="{ value }"><span class="text-muted">{{ dateTime(value) || 'Never'
+            }}</span></template>
             <template #cell-roles="{ row }">
                 <span v-if="row.roles.length" class="flex gap-1 overflow-hidden">
                     <StatusBadge v-for="r in row.roles" :key="r" tone="info">{{ r }}</StatusBadge>

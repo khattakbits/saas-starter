@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Settings\Http\Controllers\AuditLogController;
+use App\Modules\Settings\Http\Controllers\RecycleBinController;
 use App\Modules\Settings\Http\Controllers\RoleController;
 use App\Modules\Settings\Http\Controllers\SystemController;
 use App\Modules\Settings\Http\Controllers\UserController;
@@ -44,9 +45,19 @@ Route::prefix('settings')->group(function () {
     Route::middleware('can:settings.audit.view')->group(function () {
         Route::get('audit-log', [AuditLogController::class, 'index']);
         Route::get('audit-log/data', [AuditLogController::class, 'data']);
+        Route::get('audit-log/users', [AuditLogController::class, 'users']);
+        Route::get('audit-log/{log}', [AuditLogController::class, 'show'])->whereNumber('log');
     });
 
     /* System settings */
     Route::get('system', [SystemController::class, 'show'])->middleware('can:settings.system.view');
     Route::put('system', [SystemController::class, 'update'])->middleware('can:settings.system.update');
+
+    /* Recycle Bin */
+    Route::middleware('can:settings.recycle_bin.view')->group(function () {
+        Route::get('recycle-bin', [RecycleBinController::class, 'index']);
+        Route::get('recycle-bin/data', [RecycleBinController::class, 'data']);
+    });
+    Route::post('recycle-bin/restore', [RecycleBinController::class, 'restore'])->middleware('can:settings.recycle_bin.restore');
+    Route::post('recycle-bin/purge', [RecycleBinController::class, 'purge'])->middleware('can:settings.recycle_bin.purge');
 });

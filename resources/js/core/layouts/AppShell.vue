@@ -6,7 +6,6 @@ import Icon from '@core/ui/Icon.vue'
 import UserMenu from '@core/layouts/UserMenu.vue'
 import SubNav from '@core/layouts/SubNav.vue'
 import CommandPalette from '@core/layouts/CommandPalette.vue'
-import Toaster from '@core/ui/Toaster.vue'
 
 const page = usePage()
 const appName = computed(() => page.props.app?.name ?? 'App')
@@ -30,31 +29,33 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 <template>
     <div class="flex h-dvh flex-col overflow-hidden bg-bg">
         <!-- Bar 1: brand, modules, search, user. Kabhi scroll nahi hoti -->
-        <header class="flex h-12 flex-none items-stretch border-b border-line bg-surface">
-            <div class="flex flex-none items-center gap-2 border-r border-line px-4">
+        <!-- z-index order: header 40 > sub-nav 30 > page content. Header apna stacking
+             context banata hai, is liye user-menu dropdown sub-nav ke oopar paint hota hai. -->
+        <header class="relative z-40 flex h-14 flex-none items-stretch border-b border-line bg-surface">
+            <div class="flex flex-none items-center gap-2.5 border-r border-line px-4">
                 <span
-                    class="flex size-6 flex-none items-center justify-center rounded-md bg-accent text-[11px] font-bold text-white">{{
+                    class="flex size-7 flex-none items-center justify-center rounded-md bg-accent text-[13px] font-bold text-white">{{
                         appInitial }}</span>
-                <span class="truncate text-[13px] font-semibold">{{ appName }}</span>
+                <span class="truncate text-[15px] font-semibold">{{ appName }}</span>
             </div>
 
             <nav class="flex items-stretch gap-1 px-3" aria-label="Modules">
                 <Link v-for="m in modules" :key="m.key" :href="m.href" prefetch
-                    class="relative flex items-center gap-1.5 px-2.5 text-[12px] hover:text-ink" :class="m.key === active?.key
-                        ? 'font-semibold text-accent-dark after:absolute after:inset-x-1.5 after:bottom-0 after:h-0.5 after:rounded-t after:bg-accent'
-                        : 'font-medium text-ink/70'">
-                    <Icon :name="m.icon" :size="15" :class="m.key === active?.key ? 'text-accent' : 'text-muted'" />
+                    class="relative flex items-center gap-2 px-3.5 text-[14px] hover:text-ink" :class="m.key === active?.key
+                        ? 'font-semibold text-accent-dark after:absolute after:inset-x-2 after:bottom-0 after:h-0.75 after:rounded-t after:bg-accent'
+                        : 'font-medium text-ink/75'">
+                    <Icon :name="m.icon" :size="18" :class="m.key === active?.key ? 'text-accent' : 'text-muted'" />
                     {{ m.label }}
                 </Link>
             </nav>
 
-            <div class="ml-auto flex items-center gap-3 px-3">
+            <div class="ml-auto flex items-center gap-3 px-4">
                 <button type="button"
-                    class="flex h-8 w-64 items-center gap-2 rounded-md border border-line bg-bg px-2.5 text-muted hover:border-ink/30"
+                    class="flex h-9 w-72 items-center gap-2 rounded-md border border-line bg-bg px-3 text-[13px] text-muted hover:border-ink/30"
                     aria-label="Search pages (Ctrl K)" @click="paletteOpen = true">
-                    <Icon name="search" :size="14" />
+                    <Icon name="search" :size="15" />
                     <span class="flex-1 text-left">Search pages...</span>
-                    <kbd class="rounded border border-line bg-surface px-1 py-px text-[10px]">Ctrl K</kbd>
+                    <kbd class="rounded border border-line bg-surface px-1.5 py-px text-[11px]">Ctrl K</kbd>
                 </button>
                 <UserMenu />
             </div>
@@ -71,6 +72,5 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </main>
 
         <CommandPalette v-model="paletteOpen" />
-        <Toaster />
     </div>
 </template>

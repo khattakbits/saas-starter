@@ -46,7 +46,7 @@ export function useServerList({ endpoint, filters = {}, sort = { key: 'id', dir:
     })
 
     const rows = computed(() => query.data.value?.pages.flatMap(p => p.data) ?? [])
-    const total = computed(() => query.data.value?.pages.at(-1)?.total)
+    const total = computed(() => query.data.value?.pages[0]?.total)
     const isFiltered = computed(() => !!term.value || Object.values(filterState).some(Boolean))
     const resetKey = computed(() => JSON.stringify([term.value, sortState.value, filterState, size.value]))
 

@@ -11,6 +11,11 @@ import Input from '@core/ui/Input.vue'
 import Checkbox from '@core/ui/Checkbox.vue'
 import StatusBadge from '@core/ui/StatusBadge.vue'
 
+import { useFormat } from '@core/composables/useFormat'
+import { useUnsavedGuard } from '@core/composables/useUnsavedGuard'
+const { dateTime } = useFormat()
+useUnsavedGuard(() => form.isDirty)
+
 defineOptions({ layout: AppShell })
 const props = defineProps({ user: Object, roles: Array })
 
@@ -35,7 +40,7 @@ function save() {
 
 <template>
     <FormPage :title="editing ? user.name : 'New User'" back="/settings/users" back-label="Users"
-        :description="editing ? `Last login: ${user.last_login}` : 'Create an account and choose what it can do'">
+        :description="editing ? `Last login: ${dateTime(user.last_login) || 'Never'}` : 'Create an account and choose what it can do'">
         <template #badge>
             <StatusBadge v-if="editing" :tone="user.is_active ? 'success' : 'neutral'">{{ user.is_active ? 'Active' :
                 'Disabled' }}</StatusBadge>
@@ -88,7 +93,7 @@ function save() {
                     </div>
                     <p v-if="!roles.length" class="text-muted">No roles yet. Create one in Settings, Roles.</p>
                     <p v-if="form.errors.roles" role="alert" class="mt-2 text-[11px] text-red-700">{{ form.errors.roles
-                    }}</p>
+                        }}</p>
                 </FormSection>
             </FormCard>
         </form>

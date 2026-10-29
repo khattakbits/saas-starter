@@ -3,7 +3,10 @@
 namespace App\Core\Providers;
 
 use App\Core\Console\CreateAdmin;
+use App\Core\Console\PurgeBin;
+use App\Core\Support\DocumentRegistry;
 use App\Core\Support\ModuleRegistry;
+use App\Core\Support\SettingsStore;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -16,30 +19,37 @@ class CoreServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(ModuleRegistry::class);
-        $this->app->singleton(\App\Core\Support\SettingsStore::class);
+        $this->app->singleton(SettingsStore::class);
+        $this->app->singleton(DocumentRegistry::class);
     }
 
     public function boot(): void
     {
-        // Har module ke migrations khud load
         foreach ($this->app->make(ModuleRegistry::class)->all() as $module) {
-            $migrations = $module['path'] . '/Database/Migrations';
+            $migrations = $module['path'].'/Database/Migrations';
             if (is_dir($migrations)) {
                 $this->loadMigrationsFrom($migrations);
             }
         }
 
         if ($this->app->runningInConsole()) {
-            $this->commands([CreateAdmin::class]);
+            $this->commands([CreateAdmin::class, PurgeBin::class]);
         }
 
-        // N+1 queries development mein foran error dengi
-        Model::preventLazyLoading(!$this->app->environment('production'));
+        // N+1: development/tests mein error, production mein sirf log (user ko 500 nahi)
+        Model::preventLazyLoading();
+        if ($this->app->environment('production')) {
+            Model::handleLazyLoadingViolationUsing(function (Model $model, string $relation): void {
+                logger()->warning("Lazy loading [{$relation}] on [".$model::class.'].');
+            });
+        }
 
-        // super-admin role ko har cheez ka haq
-        Gate::before(fn($user) => $user->hasRole('super-admin') ? true : null);
+        Gate::before(fn ($user) => $user->hasRole('super-admin') ? true : null);
 
-        RateLimiter::for('login', fn(Request $r) => Limit::perMinute(5)
-            ->by(strtolower((string) $r->input('email')) . '|' . $r->ip()));
+        // Do limiter: (email + IP) aur sirf IP. Email badal kar bypass nahi ho sakta
+        RateLimiter::for('login', fn (Request $r) => [
+            Limit::perMinute(5)->by(strtolower((string) $r->input('email')).'|'.$r->ip()),
+            Limit::perMinute(20)->by('ip|'.$r->ip()),
+        ]);
     }
 }

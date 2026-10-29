@@ -12,7 +12,7 @@ return [
             'title' => 'Doctypes',
             'items' => [
                 ['label' => 'Dashboard', 'href' => '/', 'can' => null],   // null = har login user
-            ]
+            ],
         ],
     ],
 ];

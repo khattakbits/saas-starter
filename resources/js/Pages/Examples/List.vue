@@ -10,6 +10,7 @@ import Select from '@core/ui/Select.vue'
 import ConfirmDialog from '@core/ui/ConfirmDialog.vue'
 import Icon from '@core/ui/Icon.vue'
 import { useCan } from '@core/composables/useCan'
+import RowAction from '@core/ui/RowAction.vue'
 
 defineOptions({ layout: AppShell })
 const can = useCan()
@@ -119,6 +120,7 @@ function doDelete() {
                 <span class="flex items-center gap-1">
                     <Icon name="file" :size="11" />{{ row.comments }}
                 </span>
+                <RowAction v-if="can('demo.delete')" :label="`Delete ${row.id}`" danger @click="askDelete([row.id])" />
             </template>
             <template #bulk="{ ids }">
                 <button type="button" class="btn">Export {{ ids.length }}</button>

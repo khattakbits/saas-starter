@@ -15,15 +15,15 @@ final class ModuleRegistry
 
         $modules = [];
         foreach (glob(app_path('Modules/*'), GLOB_ONLYDIR) ?: [] as $dir) {
-            $file = $dir . '/menu.php';
-            if (!is_file($file)) {
+            $file = $dir.'/menu.php';
+            if (! is_file($file)) {
                 continue;
             }
             $def = require $file;
             $modules[$def['key']] = ['name' => basename($dir), 'path' => $dir, 'def' => $def];
         }
 
-        uasort($modules, fn($a, $b) => ($a['def']['order'] ?? 100) <=> ($b['def']['order'] ?? 100));
+        uasort($modules, fn ($a, $b) => ($a['def']['order'] ?? 100) <=> ($b['def']['order'] ?? 100));
 
         return $this->modules = $modules;
     }

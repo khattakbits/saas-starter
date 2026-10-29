@@ -7,11 +7,9 @@ use Spatie\Permission\Models\Permission;
 
 final class PermissionCatalog
 {
-    private const STANDARD = ['view', 'create', 'update', 'delete'];
+    private const ORDER = ['view', 'create', 'update', 'delete', 'submit', 'cancel', 'amend', 'restore', 'purge'];
 
-    public function __construct(private ModuleRegistry $registry)
-    {
-    }
+    public function __construct(private ModuleRegistry $registry, private DocumentRegistry $documents) {}
 
     public function groups(): array
     {
@@ -31,12 +29,15 @@ final class PermissionCatalog
                 }
             }
         }
+        foreach ($this->documents->all() as $cfg) {
+            $docLabels[$cfg['can']] = $cfg['label'];
+        }
 
         $tree = [];
         foreach (Permission::query()->orderBy('name')->pluck('name') as $name) {
             $parts = explode('.', $name);
             $action = array_pop($parts);
-            if (!$parts) {
+            if (! $parts) {
                 continue;
             }
             $tree[$parts[0]][implode('.', $parts)][] = $action;
@@ -48,6 +49,7 @@ final class PermissionCatalog
             $rows = [];
             foreach ($docs as $doc => $actions) {
                 $columns = array_merge($columns, $actions);
+                usort($actions, fn ($a, $b) => self::rank($a) <=> self::rank($b));
                 $rows[] = [
                     'key' => $doc,
                     'label' => $docLabels[$doc] ?? Str::headline(last(explode('.', $doc))),
@@ -55,7 +57,7 @@ final class PermissionCatalog
                 ];
             }
             $columns = array_values(array_unique($columns));
-            usort($columns, fn($a, $b) => self::rank($a) <=> self::rank($b) ?: strcmp($a, $b));
+            usort($columns, fn ($a, $b) => self::rank($a) <=> self::rank($b) ?: strcmp($a, $b));
 
             $order = array_search($moduleKey, $moduleOrder, true);
             $groups[] = [
@@ -67,17 +69,18 @@ final class PermissionCatalog
             ];
         }
 
-        usort($groups, fn($a, $b) => $a['order'] <=> $b['order']);
+        usort($groups, fn ($a, $b) => $a['order'] <=> $b['order']);
 
         return array_map(function ($g) {
             unset($g['order']);
+
             return $g;
         }, $groups);
     }
 
     private static function rank(string $action): int
     {
-        $i = array_search($action, self::STANDARD, true);
+        $i = array_search($action, self::ORDER, true);
 
         return $i === false ? 99 : $i;
     }

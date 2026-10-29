@@ -24,7 +24,7 @@ class AuthController extends Controller
         ]);
 
         // Disabled user login nahi kar sakta
-        if (!Auth::attempt([...$credentials, 'is_active' => true], $request->boolean('remember'))) {
+        if (! Auth::attempt([...$credentials, 'is_active' => true], $request->boolean('remember'))) {
             Audit::log('auth.failed', null, $credentials['email']);
             throw ValidationException::withMessages(['email' => 'These credentials do not match, or the account is disabled.']);
         }

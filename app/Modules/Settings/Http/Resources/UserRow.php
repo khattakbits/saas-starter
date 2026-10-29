@@ -16,7 +16,7 @@ class UserRow extends JsonResource
             'roles' => $this->roles->pluck('name')->values(),
             'is_active' => (bool) $this->is_active,
             'status' => $this->is_active ? 'Active' : 'Disabled',
-            'last_login' => $this->last_login_at?->format('d-m-Y H:i') ?? 'Never',
+            'last_login' => $this->last_login_at?->toIso8601String(),
         ];
     }
 }

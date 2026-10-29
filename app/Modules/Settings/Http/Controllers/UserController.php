@@ -3,12 +3,14 @@
 namespace App\Modules\Settings\Http\Controllers;
 
 use App\Core\Support\Audit;
+use App\Core\Support\Authority;
 use App\Core\Support\TableQuery;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Modules\Settings\Http\Requests\UserRequest;
 use App\Modules\Settings\Http\Resources\UserRow;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Spatie\Permission\Models\Role;
 
@@ -24,7 +26,6 @@ class UserController extends Controller
     public function data(Request $request)
     {
         $query = User::query()
-            ->setEagerLoads([])                      // User model ke $with ko list mein nahi chahiye
             ->with('roles:id,name')
             ->select('id', 'name', 'email', 'is_active', 'last_login_at');
 
@@ -39,9 +40,9 @@ class UserController extends Controller
                         $q->where('is_active', $v === 'active');
                     }
                 },
-                'role' => fn($q, $v) => $q->whereHas('roles', fn($r) => $r->where('name', $v)),
+                'role' => fn ($q, $v) => $q->whereHas('roles', fn ($r) => $r->where('name', $v)),
             ],
-            'search' => fn($q, $term) => $q->where(fn($w) => $w->where('name', 'like', $term . '%')->orWhere('email', 'like', $term . '%')),
+            'search' => fn ($q, $term) => $q->where(fn ($w) => $w->where('name', 'like', $term.'%')->orWhere('email', 'like', $term.'%')),
         ], UserRow::class);
     }
 
@@ -49,7 +50,7 @@ class UserController extends Controller
     {
         return Inertia::render('Settings/Users/Form', [
             'user' => null,
-            'roles' => $this->roleOptions($request),
+            'roles' => Authority::assignableRoles($request->user()),
         ]);
     }
 
@@ -57,22 +58,25 @@ class UserController extends Controller
     {
         $data = $request->validated();
 
-        $user = User::forceCreate([
-            'name' => $data['name'],
-            'email' => strtolower($data['email']),
-            'password' => $data['password'],            // 'hashed' cast khud hash karta hai
-            'is_active' => $request->boolean('is_active', true),
-        ]);
-        $user->syncRoles($data['roles'] ?? []);
+        $user = DB::transaction(function () use ($request, $data) {
+            $user = User::forceCreate([
+                'name' => $data['name'],
+                'email' => strtolower($data['email']),
+                'password' => $data['password'],            // 'hashed' cast khud hash karta hai
+                'is_active' => $request->boolean('is_active', true),
+            ]);
+            $user->syncRoles($data['roles'] ?? []);
+            Audit::log('user.created', $user, $user->email, ['roles' => $data['roles'] ?? []]);
 
-        Audit::log('user.created', $user, $user->email, ['roles' => $data['roles'] ?? []]);
+            return $user;
+        });
 
         return redirect("/settings/users/{$user->id}")->with('success', 'User created.');
     }
 
     public function edit(Request $request, User $user)
     {
-        abort_if(!$request->user()->hasRole('super-admin') && $user->hasRole('super-admin'), 403);
+        abort_unless(Authority::canManageUser($request->user(), $user), 403);
 
         return Inertia::render('Settings/Users/Form', [
             'user' => [
@@ -80,11 +84,11 @@ class UserController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'is_active' => (bool) $user->is_active,
-                'roles' => $user->roles->pluck('name')->values(),
+                'roles' => $user->getRoleNames()->values(),
                 'is_self' => $user->is($request->user()),
-                'last_login' => $user->last_login_at?->format('d-m-Y H:i') ?? 'Never',
+                'last_login' => $user->last_login_at?->toIso8601String(),
             ],
-            'roles' => $this->roleOptions($request),
+            'roles' => Authority::assignableRoles($request->user()),
         ]);
     }
 
@@ -92,27 +96,45 @@ class UserController extends Controller
     {
         $data = $request->validated();
 
-        $attributes = [
-            'name' => $data['name'],
-            'email' => strtolower($data['email']),
-            'is_active' => $request->boolean('is_active'),
-        ];
-        if (!empty($data['password'])) {
-            $attributes['password'] = $data['password'];
-        }
+        DB::transaction(function () use ($request, $user, $data) {
+            $before = $this->snapshot($user);
 
-        $user->forceFill($attributes)->save();
-        $user->syncRoles($data['roles'] ?? []);
+            $attributes = ['name' => $data['name'], 'email' => strtolower($data['email'])];
+            if ($request->has('is_active')) {
+                $attributes['is_active'] = $request->boolean('is_active');   // na bheja to jaisa tha waisa
+            }
+            if (! empty($data['password'])) {
+                $attributes['password'] = $data['password'];
+            }
 
-        Audit::log('user.updated', $user, $user->email, ['password_changed' => !empty($data['password'])]);
+            $user->forceFill($attributes)->save();
+            if ($request->has('roles')) {
+                $user->syncRoles($data['roles'] ?? []);
+            }
+
+            Audit::log('user.updated', $user, $user->email, [
+                'changes' => Audit::changes($before, $this->snapshot($user->load('roles'))),
+                'password_changed' => ! empty($data['password']),
+            ]);
+        });
 
         return back()->with('success', 'User saved.');
+    }
+
+    private function snapshot(User $u): array
+    {
+        return [
+            'name' => $u->name,
+            'email' => $u->email,
+            'is_active' => (bool) $u->is_active,
+            'roles' => $u->getRoleNames()->sort()->values()->all(),
+        ];
     }
 
     public function bulkStatus(Request $request)
     {
         $data = $request->validate([
-            'ids' => ['required', 'array', 'max:500'],
+            'ids' => ['required', 'array', 'max:2500'],
             'ids.*' => ['integer'],
             'active' => ['required', 'boolean'],
         ]);
@@ -122,35 +144,29 @@ class UserController extends Controller
         $changed = 0;
         $skipped = 0;
 
-        foreach (User::query()->whereIn('id', $data['ids'])->get() as $u) {
-            if ($u->is($actor) || $u->hasRole('super-admin')) {
-                $skipped++;
-                continue;
-            }
-            if ((bool) $u->is_active === $active) {
-                continue;
-            }
-            $u->forceFill(['is_active' => $active])->save();
-            Audit::log('user.status', $u, $u->email, ['active' => $active]);
-            $changed++;
-        }
+        DB::transaction(function () use ($data, $active, $actor, &$changed, &$skipped) {
+            $users = User::query()->with(['roles.permissions', 'permissions'])->whereIn('id', $data['ids'])->get();
 
-        $message = "{$changed} user(s) " . ($active ? 'enabled' : 'disabled') . '.';
+            foreach ($users as $u) {
+                if ($u->is($actor) || $u->hasRole('super-admin') || ! Authority::canManageUser($actor, $u)) {
+                    $skipped++;
+
+                    continue;
+                }
+                if ((bool) $u->is_active === $active) {
+                    continue;
+                }
+                $u->forceFill(['is_active' => $active])->save();
+                Audit::log('user.status', $u, $u->email, ['active' => $active]);
+                $changed++;
+            }
+        });
+
+        $message = "{$changed} user(s) ".($active ? 'enabled' : 'disabled').'.';
         if ($skipped) {
-            $message .= " {$skipped} skipped (your own account and super admins are changed one by one).";
+            $message .= " {$skipped} skipped (your own account, super admins and users with more access than you).";
         }
 
         return back()->with('success', $message);
-    }
-
-    private function roleOptions(Request $request): array
-    {
-        return Role::query()
-            ->when(!$request->user()->hasRole('super-admin'), fn($q) => $q->where('name', '!=', 'super-admin'))
-            ->withCount('permissions')
-            ->orderBy('name')
-            ->get()
-            ->map(fn($r) => ['name' => $r->name, 'permissions' => $r->permissions_count])
-            ->all();
     }
 }

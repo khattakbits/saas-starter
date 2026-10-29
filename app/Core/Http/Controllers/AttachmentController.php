@@ -4,17 +4,35 @@ namespace App\Core\Http\Controllers;
 
 use App\Core\Models\Attachment;
 use App\Http\Controllers\Controller;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class AttachmentController extends Controller
 {
-    private function authorizeType(Request $request, string $type): void
+    private function typeConfig(string $type): array
     {
-        $cfg = config("attachments.types.$type");
-        abort_if($cfg === null, 404);
-        if (!empty($cfg['can'])) {
-            abort_unless($request->user()->can($cfg['can']), 403);
+        $types = config('attachments.types', []);
+        abort_unless(isset($types[$type]), 404);
+
+        return $types[$type];
+    }
+
+    private function allow(Request $request, array $cfg, string $action): void
+    {
+        abort_unless(array_key_exists($action, $cfg), 403);   // key na ho to deny
+        $permission = $cfg[$action];
+        if ($permission !== null) {
+            abort_unless($request->user()->can($permission), 403);
+        }
+    }
+
+    private function ensureRecord(array $cfg, int $id): void
+    {
+        $model = $cfg['model'] ?? null;
+        if ($model) {
+            abort_unless($model::query()->whereKey($id)->exists(), 404);
         }
     }
 
@@ -26,31 +44,42 @@ class AttachmentController extends Controller
     public function index(Request $request)
     {
         $data = $request->validate(['type' => ['required', 'string', 'max:40'], 'id' => ['required', 'integer', 'min:1']]);
-        $this->authorizeType($request, $data['type']);
+        $cfg = $this->typeConfig($data['type']);
+        $this->allow($request, $cfg, 'view');
+        $this->ensureRecord($cfg, (int) $data['id']);
 
-        $files = Attachment::where('attachable_type', $data['type'])
+        /** @var Collection<int, Attachment> $attachments */
+        $attachments = Attachment::query()
+            ->where('attachable_type', $data['type'])
             ->where('attachable_id', $data['id'])
-            ->latest('id')->get()->map(fn($a) => $this->row($a));
+            ->latest('id')
+            ->get();
+
+        $files = $attachments->map(fn (Attachment $a): array => $this->row($a));
 
         return response()->json(['data' => $files]);
     }
 
     public function store(Request $request)
     {
-        $request->validate([
+        $data = $request->validate([
             'type' => ['required', 'string', 'max:40'],
             'id' => ['required', 'integer', 'min:1'],
-            'file' => ['required', 'file', 'max:' . config('attachments.max_kb'), 'mimes:' . implode(',', config('attachments.mimes'))],
+            'file' => ['required', 'file', 'max:'.config('attachments.max_kb'), 'extensions:'.implode(',', config('attachments.extensions'))],
         ]);
-        $type = $request->input('type');
-        $this->authorizeType($request, $type);
+
+        $cfg = $this->typeConfig($data['type']);
+        $this->allow($request, $cfg, 'update');
+        $this->ensureRecord($cfg, (int) $data['id']);
 
         $file = $request->file('file');
-        $path = $file->store('attachments/' . now()->format('Y/m'));   // random naam, default private disk
+        $this->enforceLimits($request, $data['type'], (int) $data['id'], (int) $file->getSize());
+
+        $path = $file->store('attachments/'.now()->format('Y/m'));   // random naam, private disk
 
         $attachment = Attachment::create([
-            'attachable_type' => $type,
-            'attachable_id' => (int) $request->input('id'),
+            'attachable_type' => $data['type'],
+            'attachable_id' => (int) $data['id'],
             'name' => mb_substr($file->getClientOriginalName(), 0, 255),
             'path' => $path,
             'mime' => $file->getMimeType(),
@@ -63,7 +92,7 @@ class AttachmentController extends Controller
 
     public function show(Request $request, Attachment $attachment)
     {
-        $this->authorizeType($request, $attachment->attachable_type);
+        $this->allow($request, $this->typeConfig($attachment->attachable_type), 'view');
         abort_unless(Storage::exists($attachment->path), 404);
 
         // Hamesha download (inline nahi): HTML/SVG file browser mein chal kar XSS na kar sake
@@ -72,10 +101,26 @@ class AttachmentController extends Controller
 
     public function destroy(Request $request, Attachment $attachment)
     {
-        $this->authorizeType($request, $attachment->attachable_type);
+        $this->allow($request, $this->typeConfig($attachment->attachable_type), 'delete');
+
         Storage::delete($attachment->path);
         $attachment->delete();
 
         return response()->noContent();
+    }
+
+    private function enforceLimits(Request $request, string $type, int $id, int $size): void
+    {
+        $count = Attachment::query()->where('attachable_type', $type)->where('attachable_id', $id)->count();
+        if ($count >= (int) config('attachments.max_files_per_record', 50)) {
+            throw ValidationException::withMessages(['file' => 'This record already has the maximum number of attachments.']);
+        }
+
+        $usedToday = (int) Attachment::query()->where('uploaded_by', $request->user()->id)
+            ->where('created_at', '>=', now()->subDay())
+            ->sum('size');
+        if ($usedToday + $size > (int) config('attachments.max_mb_per_user_per_day', 200) * 1048576) {
+            throw ValidationException::withMessages(['file' => 'Daily upload limit reached. Try again tomorrow.']);
+        }
     }
 }

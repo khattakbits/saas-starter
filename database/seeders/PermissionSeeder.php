@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Core\Support\DocumentRegistry;
 use App\Core\Support\ModuleRegistry;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
@@ -25,23 +26,34 @@ class PermissionSeeder extends Seeder
             }
             array_push($names, ...($module['def']['permissions'] ?? []));
         }
+
+        foreach (app(DocumentRegistry::class)->all() as $cfg) {
+            foreach (DocumentRegistry::ACTIONS as $action) {
+                $names[] = $cfg['can'].'.'.$action;
+            }
+        }
+
         $names = array_values(array_unique($names));
 
+        $created = [];
         foreach ($names as $name) {
-            Permission::findOrCreate($name, 'web');
+            if (Permission::findOrCreate($name, 'web')->wasRecentlyCreated) {
+                $created[] = $name;
+            }
         }
 
         Role::findOrCreate('super-admin', 'web');   // Gate::before se sab kuch
 
-        // Pehli baar hi permissions milti hain; baad mein Roles screen se manage hoti hain
+        // Pehli baar poori permissions; baad mein sirf NAYI permissions add hoti hain, kisi se kuch hatayi nahi jati
         $defaults = [
             'manager' => $names,
-            'viewer' => array_values(array_filter($names, fn($n) => str_ends_with($n, '.view'))),
+            'viewer' => array_values(array_filter($names, fn ($n) => str_ends_with($n, '.view'))),
         ];
         foreach ($defaults as $roleName => $perms) {
             $role = Role::findOrCreate($roleName, 'web');
-            if ($role->wasRecentlyCreated) {
-                $role->syncPermissions($perms);
+            $grant = $role->wasRecentlyCreated ? $perms : array_values(array_intersect($created, $perms));
+            if ($grant) {
+                $role->givePermissionTo($grant);
             }
         }
     }

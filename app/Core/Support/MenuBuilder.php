@@ -6,13 +6,11 @@ use App\Models\User;
 
 final class MenuBuilder
 {
-    public function __construct(private ModuleRegistry $registry)
-    {
-    }
+    public function __construct(private ModuleRegistry $registry) {}
 
     public function for(?User $user): array
     {
-        if (!$user) {
+        if (! $user) {
             return [];
         }
 
@@ -24,12 +22,12 @@ final class MenuBuilder
             foreach ($def['sections'] as $section) {
                 $items = array_values(array_filter(
                     $section['items'],
-                    fn($i) => $i['can'] === null || $user->can($i['can'])
+                    fn ($i) => $i['can'] === null || $user->can($i['can'])
                 ));
                 if ($items) {
                     $sections[] = [
                         'title' => $section['title'],
-                        'items' => array_map(fn($i) => ['label' => $i['label'], 'href' => $i['href']], $items),
+                        'items' => array_map(fn ($i) => ['label' => $i['label'], 'href' => $i['href'], 'group' => $i['group'] ?? null], $items),
                     ];
                 }
             }

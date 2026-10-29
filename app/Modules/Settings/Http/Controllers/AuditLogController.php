@@ -3,11 +3,14 @@
 namespace App\Modules\Settings\Http\Controllers;
 
 use App\Core\Models\AuditLog;
+use App\Core\Support\DocumentRegistry;
 use App\Core\Support\TableQuery;
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Modules\Settings\Http\Resources\AuditRow;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Spatie\Permission\Models\Role;
 
 class AuditLogController extends Controller
 {
@@ -22,19 +25,31 @@ class AuditLogController extends Controller
         'role.updated' => 'Role updated',
         'role.deleted' => 'Role deleted',
         'settings.updated' => 'Settings updated',
+        'doc.created' => 'Document created',
+        'doc.updated' => 'Document updated',
+        'doc.submitted' => 'Document submitted',
+        'doc.cancelled' => 'Document cancelled',
+        'doc.amended' => 'Document amended',
+        'doc.deleted' => 'Moved to Recycle Bin',
+        'doc.restored' => 'Document restored',
+        'doc.purged' => 'Permanently deleted',
     ];
 
-    public function index()
+    public function index(Request $request)
     {
+        $userId = (int) $request->query('user');
+        $user = $userId ? User::query()->select('id', 'name')->find($userId) : null;
+
         return Inertia::render('Settings/AuditLog/Index', [
-            'events' => collect(self::EVENTS)->map(fn($label, $value) => ['value' => $value, 'label' => $label])->values(),
+            'events' => collect(self::EVENTS)->map(fn ($label, $value) => ['value' => $value, 'label' => $label])->values(),
+            'filter' => ['user' => $user ? (string) $user->id : '', 'userLabel' => $user?->name ?? ''],
         ]);
     }
 
     public function data(Request $request)
     {
         $query = AuditLog::query()->select('id', 'user_name', 'event', 'subject_label', 'ip', 'created_at');
-        $isDate = fn($v) => (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $v);
+        $isDate = fn ($v) => (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $v);
 
         return TableQuery::json($query, $request, [
             'sortable' => ['id' => 'id', 'when' => 'id', 'event' => 'event'],
@@ -42,14 +57,74 @@ class AuditLogController extends Controller
             'dir' => 'desc',
             'filters' => [
                 'event',
+                'user' => function ($q, $v) {
+                    if (ctype_digit($v)) {
+                        $q->where('user_id', (int) $v);
+                    }
+                },
                 'from' => function ($q, $v) use ($isDate) {
-                    if ($isDate($v))
-                        $q->where('created_at', '>=', $v . ' 00:00:00'); },
+                    if ($isDate($v)) {
+                        $q->where('created_at', '>=', $v.' 00:00:00');
+                    }
+                },
                 'to' => function ($q, $v) use ($isDate) {
-                    if ($isDate($v))
-                        $q->where('created_at', '<=', $v . ' 23:59:59'); },
+                    if ($isDate($v)) {
+                        $q->where('created_at', '<=', $v.' 23:59:59');
+                    }
+                },
             ],
-            'search' => fn($q, $term) => $q->where('subject_label', 'like', $term . '%'),   // prefix: index use hota hai
+            'search' => fn ($q, $term) => $q->where('subject_label', 'like', $term.'%'),   // prefix: index use hota hai
         ], AuditRow::class);
+    }
+
+    public function users(Request $request)
+    {
+        $term = addcslashes(trim((string) $request->query('q', '')), '%_\\');
+
+        $rows = User::query()->select('id', 'name', 'email')
+            ->when($term !== '', fn ($q) => $q->where(fn ($w) => $w->where('name', 'like', $term.'%')->orWhere('email', 'like', $term.'%')))
+            ->orderBy('name')
+            ->limit(20)
+            ->get()
+            ->map(fn ($u) => ['value' => (string) $u->id, 'label' => $u->name, 'description' => $u->email]);
+
+        return response()->json(['data' => $rows]);
+    }
+
+    public function show(Request $request, AuditLog $log)
+    {
+        $meta = $log->meta ?? [];
+        $actor = $request->user();
+
+        $doc = app(DocumentRegistry::class)->get((string) $log->subject_type);
+
+        $docUrl = $doc && $doc['url'] && $actor->can($doc['can'].'.view') && $doc['model']::whereKey($log->subject_id)->exists()
+            ? str_replace('{id}', (string) $log->subject_id, $doc['url'])
+            : null;
+
+        // Link sirf tab jab dekhne wale ko us page ka haq ho
+        $subjectUrl = $docUrl ?? match ($log->subject_type) {
+            'user' => $actor->can('settings.users.update') && User::whereKey($log->subject_id)->exists() ? "/settings/users/{$log->subject_id}" : null,
+            'role' => $actor->can('settings.roles.update') && Role::whereKey($log->subject_id)->exists() ? "/settings/roles/{$log->subject_id}" : null,
+            default => null,
+        };
+
+        return Inertia::render('Settings/AuditLog/Show', [
+            'log' => [
+                'id' => $log->id,
+                'when' => $log->created_at?->toIso8601String(),
+                'user_id' => $log->user_id,
+                'user' => $log->user_name,
+                'event' => $log->event,
+                'event_label' => self::EVENTS[$log->event] ?? $log->event,
+                'subject_type' => $log->subject_type,
+                'subject' => $log->subject_label,
+                'subject_url' => $subjectUrl,
+                'ip' => $log->ip,
+                'user_agent' => $log->user_agent,
+                'changes' => $meta['changes'] ?? null,
+                'meta' => collect($meta)->except('changes')->all() ?: null,
+            ],
+        ]);
     }
 }

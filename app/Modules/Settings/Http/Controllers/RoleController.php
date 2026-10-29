@@ -3,12 +3,14 @@
 namespace App\Modules\Settings\Http\Controllers;
 
 use App\Core\Support\Audit;
+use App\Core\Support\Authority;
 use App\Core\Support\PermissionCatalog;
 use App\Core\Support\TableQuery;
 use App\Http\Controllers\Controller;
 use App\Modules\Settings\Http\Requests\RoleRequest;
 use App\Modules\Settings\Http\Resources\RoleRow;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Spatie\Permission\Models\Role;
 
@@ -21,14 +23,16 @@ class RoleController extends Controller
 
     public function data(Request $request)
     {
-        $query = Role::query()->withCount(['users', 'permissions']);
+        $query = Role::query()
+            ->withCount(['users', 'permissions'])
+            ->when(! Authority::isSuper($request->user()), fn ($q) => $q->with('permissions:id,name'));
 
         return TableQuery::json($query, $request, [
             'sortable' => ['id' => 'id', 'name' => 'name'],
             'default' => 'name',
             'dir' => 'asc',
             'count' => true,
-            'search' => fn($q, $term) => $q->where('name', 'like', $term . '%'),
+            'search' => fn ($q, $term) => $q->where('name', 'like', $term.'%'),
         ], RoleRow::class);
     }
 
@@ -45,16 +49,20 @@ class RoleController extends Controller
     {
         $data = $request->validated();
 
-        $role = Role::create(['name' => $data['name'], 'guard_name' => 'web']);
-        $role->syncPermissions($data['permissions'] ?? []);
+        $role = DB::transaction(function () use ($data) {
+            $role = Role::create(['name' => $data['name'], 'guard_name' => 'web']);
+            $role->syncPermissions($data['permissions'] ?? []);
+            Audit::log('role.created', $role, $role->name, ['permissions' => count($data['permissions'] ?? [])]);
 
-        Audit::log('role.created', $role, $role->name, ['permissions' => count($data['permissions'] ?? [])]);
+            return $role;
+        });
 
         return redirect("/settings/roles/{$role->id}")->with('success', 'Role created.');
     }
 
-    public function edit(Role $role)
+    public function edit(Request $request, Role $role)
     {
+        abort_unless(Authority::canEditRole($request->user(), $role), 403);
         $role->load('permissions');
 
         return Inertia::render('Settings/Roles/Form', [
@@ -75,55 +83,35 @@ class RoleController extends Controller
 
         $data = $request->validated();
 
-        $role->update(['name' => $data['name']]);
-        $role->syncPermissions($data['permissions'] ?? []);
+        DB::transaction(function () use ($role, $data) {
+            $names = fn () => $role->permissions()->pluck('name')->sort()->values()->all();
+            $before = ['name' => $role->name, 'permissions' => $names()];
 
-        Audit::log('role.updated', $role, $role->name, ['permissions' => count($data['permissions'] ?? [])]);
+            $role->update(['name' => $data['name']]);
+            $role->syncPermissions($data['permissions'] ?? []);
+
+            Audit::log('role.updated', $role, $role->name, [
+                'changes' => Audit::changes($before, ['name' => $role->name, 'permissions' => $names()]),
+            ]);
+        });
 
         return back()->with('success', 'Role saved.');
     }
 
-    public function bulkDestroy(Request $request)
-    {
-        $data = $request->validate([
-            'ids' => ['required', 'array', 'max:500'],
-            'ids.*' => ['integer'],
-        ]);
-
-        $deleted = 0;
-        $skipped = 0;
-
-        foreach (Role::query()->whereIn('id', $data['ids'])->get() as $role) {
-            if ($role->name === 'super-admin' || $role->users()->exists()) {
-                $skipped++;
-                continue;
-            }
-
-            $name = $role->name;
-            $role->delete();
-            Audit::log('role.deleted', null, $name);
-            $deleted++;
-        }
-
-        $message = "{$deleted} role(s) deleted.";
-        if ($skipped) {
-            $message .= " {$skipped} skipped (super admin and roles assigned to users cannot be deleted).";
-        }
-
-        return back()->with('success', $message);
-    }
-
-    public function destroy(Role $role)
+    public function destroy(Request $request, Role $role)
     {
         abort_if($role->name === 'super-admin', 403);
+        abort_unless(Authority::canEditRole($request->user(), $role), 403);
 
         if ($role->users()->exists()) {
             return back()->with('error', 'This role is assigned to users. Remove it from them first.');
         }
 
         $name = $role->name;
-        $role->delete();
-        Audit::log('role.deleted', null, $name);
+        DB::transaction(function () use ($role, $name) {
+            $role->delete();
+            Audit::log('role.deleted', null, $name);
+        });
 
         return redirect('/settings/roles')->with('success', 'Role deleted.');
     }

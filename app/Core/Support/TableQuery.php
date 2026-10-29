@@ -11,12 +11,12 @@ final class TableQuery
 {
     /**
      * $config = [
-     *   'sortable' => ['name' => 'name', 'status' => 'is_active'],   // frontend key => DB column (NOT NULL, indexed)
+     *   'sortable' => ['name' => 'name'],       // frontend key => DB column (NOT NULL, indexed)
      *   'default'  => 'name',
-     *   'dir'      => 'asc',                                         // default direction
-     *   'filters'  => ['event', 'status' => fn ($q, $v) => ...],     // column naam ya closure
+     *   'dir'      => 'asc',
+     *   'filters'  => ['event', 'status' => fn ($q, $v) => ...],
      *   'search'   => fn ($q, string $term) => ...,
-     *   'count'    => true,                                          // total ginna (bohat bari tables par false)
+     *   'count'    => true,                     // total sirf pehle page par ginta hai
      * ]
      */
     public static function json(Builder $query, Request $request, array $config, string $resource): AnonymousResourceCollection
@@ -24,7 +24,7 @@ final class TableQuery
         self::filter($query, $request, $config);
 
         $extra = [];
-        if ($config['count'] ?? false) {
+        if (($config['count'] ?? false) && ! $request->filled('cursor')) {
             $extra['total'] = (clone $query)->count();
         }
 
@@ -41,7 +41,7 @@ final class TableQuery
         foreach ($config['filters'] ?? [] as $key => $def) {
             $name = is_int($key) ? $def : $key;
             $value = $values[$name] ?? null;
-            if (!is_string($value) || $value === '') {
+            if (! is_string($value) || $value === '') {
                 continue;
             }
             $def instanceof Closure ? $def($query, $value) : $query->where($name, $value);
@@ -56,7 +56,7 @@ final class TableQuery
     private static function sort(Builder $query, Request $request, array $config): void
     {
         $map = $config['sortable'];
-        $column = $map[(string) $request->query('sort', $config['default'])] ?? $map[$config['default']];
+        $column = $map[(string) $request->query('sort', $config['default'])] ?? $map[$config['default']] ?? 'id';
         $dir = in_array($request->query('dir'), ['asc', 'desc'], true) ? $request->query('dir') : ($config['dir'] ?? 'desc');
 
         $query->orderBy($column, $dir);

@@ -11,7 +11,7 @@ final class SettingsStore
 
     public function all(): array
     {
-        return Cache::rememberForever(self::CACHE_KEY, fn() => Setting::query()->pluck('value', 'key')->all());
+        return Cache::rememberForever(self::CACHE_KEY, fn () => Setting::query()->pluck('value', 'key')->all());
     }
 
     public function get(string $key, mixed $default = null): mixed

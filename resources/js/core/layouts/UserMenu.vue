@@ -22,12 +22,12 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', onPointer); 
 
 <template>
     <div ref="root" class="relative">
-        <button type="button" class="flex h-8 items-center gap-2 rounded-md px-1.5 hover:bg-bg" aria-haspopup="menu"
+        <button type="button" class="flex h-9 items-center gap-2 rounded-md px-1.5 hover:bg-bg" aria-haspopup="menu"
             :aria-expanded="open" @click="open = !open">
             <span
-                class="flex size-6 items-center justify-center rounded-full bg-accent text-[11px] font-semibold text-white">{{
-                initial }}</span>
-            <span class="max-w-32 truncate text-ink/90">{{ auth?.name }}</span>
+                class="flex size-7 items-center justify-center rounded-full bg-accent text-[12px] font-semibold text-white">{{
+                    initial }}</span>
+            <span class="max-w-32 truncate text-ink/90 text-[13px]">{{ auth?.name }}</span>
             <Icon name="chevron-down" :size="14" class="text-muted" />
         </button>
 
@@ -37,13 +37,13 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', onPointer); 
                 <p class="truncate font-semibold">{{ auth?.name }}</p>
                 <p class="truncate text-muted">{{ auth?.email }}</p>
             </div>
-            <Link href="/profile" role="menuitem" class="flex h-8 items-center gap-2 px-3 hover:bg-bg"
+            <Link href="/profile" role="menuitem" class="flex h-9 text-[13px] items-center gap-2 px-3 hover:bg-bg"
                 @click="open = false">
                 <Icon name="user" :size="14" />Profile
             </Link>
             <div class="my-1 border-t border-line"></div>
             <Link href="/logout" method="post" as="button" role="menuitem"
-                class="flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-bg">
+                class="flex h-9 text-[13px] w-full items-center gap-2 px-3 text-left hover:bg-bg">
                 <Icon name="log-out" :size="14" />Logout
             </Link>
         </div>

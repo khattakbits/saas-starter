@@ -11,7 +11,7 @@ class AuditRow extends JsonResource
     {
         return [
             'id' => $this->id,
-            'when' => $this->created_at?->format('d-m-Y H:i:s'),
+            'when' => $this->created_at?->toIso8601String(),
             'user' => $this->user_name ?? '-',
             'event' => $this->event,
             'subject' => $this->subject_label ?? '',
