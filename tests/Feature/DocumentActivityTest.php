@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Core\Models\DeletedDocument;
 use App\Models\User;
 use App\Modules\Examples\Models\DemoEntry;
 use Database\Seeders\PermissionSeeder;
@@ -10,6 +9,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Inertia\Testing\AssertableInertia as Assert;
 use KhattakBits\Core\Models\AuditLog;
+use KhattakBits\Core\Models\DeletedDocument;
 use KhattakBits\Core\Support\Naming;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;

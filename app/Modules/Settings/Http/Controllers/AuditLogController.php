@@ -2,13 +2,13 @@
 
 namespace App\Modules\Settings\Http\Controllers;
 
-use App\Core\Support\DocumentRegistry;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Modules\Settings\Http\Resources\AuditRow;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use KhattakBits\Core\Models\AuditLog;
+use KhattakBits\Core\Support\DocumentRegistry;
 use KhattakBits\Core\Support\TableQuery;
 use Spatie\Permission\Models\Role;
 

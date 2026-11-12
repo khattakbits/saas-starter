@@ -3,8 +3,6 @@
 namespace App\Core\Providers;
 
 use App\Core\Console\CreateAdmin;
-use App\Core\Console\PurgeBin;
-use App\Core\Support\DocumentRegistry;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -12,6 +10,8 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use KhattakBits\Core\Console\PruneEmails;
+use KhattakBits\Core\Console\PurgeBin;
+use KhattakBits\Core\Support\DocumentRegistry;
 use KhattakBits\Core\Support\EmailTemplates;
 use KhattakBits\Core\Support\ModuleRegistry;
 use KhattakBits\Core\Support\SettingsStore;

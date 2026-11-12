@@ -1,12 +1,12 @@
 <?php
 
-use App\Core\Http\Controllers\AttachmentController;
 use App\Core\Http\Controllers\AuthController;
-use App\Core\Http\Controllers\DocumentActivityController;
 use App\Core\Http\Controllers\PasswordResetController;
 use App\Core\Http\Controllers\ProfileController;
 use App\Core\Http\Middleware\EnsureUserActive;
 use Illuminate\Support\Facades\Route;
+use KhattakBits\Core\Http\Controllers\AttachmentController;
+use KhattakBits\Core\Http\Controllers\DocumentActivityController;
 use KhattakBits\Core\Support\ModuleRegistry;
 
 Route::middleware('guest')->group(function () {
