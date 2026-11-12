@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('bin:purge')->dailyAt('03:00');
+Schedule::command('emails:prune')->dailyAt('03:30');

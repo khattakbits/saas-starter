@@ -3,8 +3,10 @@
 namespace App\Core\Providers;
 
 use App\Core\Console\CreateAdmin;
+use App\Core\Console\PruneEmails;
 use App\Core\Console\PurgeBin;
 use App\Core\Support\DocumentRegistry;
+use App\Core\Support\EmailTemplates;
 use App\Core\Support\ModuleRegistry;
 use App\Core\Support\SettingsStore;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -21,6 +23,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->app->singleton(ModuleRegistry::class);
         $this->app->singleton(SettingsStore::class);
         $this->app->singleton(DocumentRegistry::class);
+        $this->app->singleton(EmailTemplates::class);
     }
 
     public function boot(): void
@@ -33,7 +36,7 @@ class CoreServiceProvider extends ServiceProvider
         }
 
         if ($this->app->runningInConsole()) {
-            $this->commands([CreateAdmin::class, PurgeBin::class]);
+            $this->commands([CreateAdmin::class, PurgeBin::class, PruneEmails::class]);
         }
 
         // N+1: development/tests mein error, production mein sirf log (user ko 500 nahi)
@@ -50,6 +53,12 @@ class CoreServiceProvider extends ServiceProvider
         RateLimiter::for('login', fn (Request $r) => [
             Limit::perMinute(5)->by(strtolower((string) $r->input('email')).'|'.$r->ip()),
             Limit::perMinute(20)->by('ip|'.$r->ip()),
+        ]);
+
+        // Password reset: IP par 5/min aur usi email par 3/min (dono lagte hain)
+        RateLimiter::for('password-reset', fn (Request $r) => [
+            Limit::perMinute(5)->by('ip|'.$r->ip()),
+            Limit::perMinute(3)->by('email|'.mb_strtolower(trim((string) $r->input('email')))),
         ]);
     }
 }

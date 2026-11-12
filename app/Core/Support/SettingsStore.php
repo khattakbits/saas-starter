@@ -27,5 +27,10 @@ final class SettingsStore
             Setting::updateOrCreate(['key' => $key], ['value' => $value === null ? null : (string) $value]);
         }
         Cache::forget(self::CACHE_KEY);
+
+        // Email settings badle to mail readiness dobara check ho
+        if (array_filter(array_keys($values), fn ($key) => str_starts_with($key, 'email_'))) {
+            Mailer::forgetReady();
+        }
     }
 }

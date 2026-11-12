@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Core\Support\Mailer;
 use App\Core\Support\MenuBuilder;
 use App\Core\Support\SettingsStore;
 use Illuminate\Http\Request;
@@ -24,6 +25,7 @@ class HandleInertiaRequests extends Middleware
                 'name' => app(SettingsStore::class)->get('app_name', config('app.name')),
                 'pageSize' => (int) app(SettingsStore::class)->get('default_page_size', 20),
                 'timezone' => app(SettingsStore::class)->get('timezone', 'Asia/Karachi'),
+                'mailReady' => Mailer::isReady(),
             ],
             'flash' => fn () => [
                 'success' => $request->session()->get('success'),
