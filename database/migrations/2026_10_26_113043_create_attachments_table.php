@@ -19,7 +19,9 @@ return new class extends Migration
             $table->string('path', 500);
             $table->string('mime', 100)->nullable();
             $table->unsignedBigInteger('size');
-            $table->foreignId('uploaded_by')->nullable()->constrained('users')->nullOnDelete();
+            // No FK to users: users live in the central DB, tenant DBs don't have that table.
+            // Cross-DB FKs are impossible, so this is a plain indexed column (see docs/platform/03-EXTRACTION-PLAN.md Step 0).
+            $table->unsignedBigInteger('uploaded_by')->nullable()->index();
             $table->timestamps();
 
             $table->index(['attachable_type', 'attachable_id']);

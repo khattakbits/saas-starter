@@ -13,8 +13,11 @@ return new class extends Migration
     {
         Schema::create('audit_logs', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
+            // No FK to users (central DB). Identity is snapshotted below so audit
+            // rows stay readable after a user is deleted or exported to another DB.
+            $table->unsignedBigInteger('user_id')->nullable()->index();
             $table->string('user_name', 100)->nullable();
+            $table->string('user_email', 190)->nullable();
             $table->string('event', 60);
             $table->string('subject_type', 40)->nullable();
             $table->unsignedBigInteger('subject_id')->nullable();

@@ -15,7 +15,8 @@ return new class extends Migration
             $table->id();
             $table->string('doc_type', 60);
             $table->unsignedBigInteger('doc_id');
-            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
+            // No FK to users (central DB) — user_name is snapshotted below.
+            $table->unsignedBigInteger('user_id')->nullable()->index();
             $table->string('user_name', 100)->nullable();
             $table->unsignedInteger('views')->default(1);
             $table->timestamp('first_viewed_at');

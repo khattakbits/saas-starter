@@ -13,6 +13,7 @@ class AuditRow extends JsonResource
             'id' => $this->id,
             'when' => $this->created_at?->toIso8601String(),
             'user' => $this->user_name ?? '-',
+            'user_email' => $this->user_email,
             'event' => $this->event,
             'subject' => $this->subject_label ?? '',
             'ip' => $this->ip ?? '',

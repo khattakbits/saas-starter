@@ -8,13 +8,21 @@ use Illuminate\Support\Str;
 
 final class Audit
 {
+    /**
+     * Note: method ka naam `log()` hai (task mein `record()` likha tha). Yeh aik hi
+     * entry point rakha gaya hai taake 25+ call sites duplicate na hon.
+     *
+     * user_id FK nahi hai (users central DB mein rehte hain), is liye name + email
+     * snapshot jaate hain — tenant export/restore ke baad bhi row readable rahe.
+     */
     public static function log(string $event, ?Model $subject = null, ?string $label = null, array $meta = []): void
     {
         $user = auth()->user();
 
         AuditLog::create([
             'user_id' => $user?->id,
-            'user_name' => $user?->name,
+            'user_name' => $user ? mb_substr((string) $user->name, 0, 100) : null,
+            'user_email' => $user ? mb_substr((string) $user->email, 0, 190) : null,
             'event' => $event,
             'subject_type' => $subject
                 ? (method_exists($subject, 'docType') ? $subject->docType() : Str::snake(class_basename($subject)))

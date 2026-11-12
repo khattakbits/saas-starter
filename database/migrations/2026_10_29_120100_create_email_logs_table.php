@@ -20,7 +20,8 @@ return new class extends Migration
             $table->string('status', 12);                       // queued | sent | failed
             $table->text('error')->nullable();
             $table->unsignedTinyInteger('attempts')->default(0);
-            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
+            // No FK to users (central DB) — plain indexed column.
+            $table->unsignedBigInteger('user_id')->nullable()->index();
             $table->timestamp('queued_at');
             $table->timestamp('sent_at')->nullable();
             $table->timestamp('created_at')->useCurrent();

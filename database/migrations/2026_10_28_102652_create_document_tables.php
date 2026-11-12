@@ -16,7 +16,8 @@ return new class extends Migration
             $table->string('doc_type', 60);
             $table->unsignedBigInteger('doc_id');
             $table->string('title', 190);
-            $table->foreignId('deleted_by')->nullable()->constrained('users')->nullOnDelete();
+            // No FK to users (central DB) — name is snapshotted below.
+            $table->unsignedBigInteger('deleted_by')->nullable()->index();
             $table->string('deleted_by_name', 100)->nullable();
             $table->unsignedTinyInteger('original_docstatus')->default(0);
             $table->timestamp('created_at')->useCurrent();

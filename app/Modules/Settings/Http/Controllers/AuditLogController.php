@@ -56,7 +56,7 @@ class AuditLogController extends Controller
 
     public function data(Request $request)
     {
-        $query = AuditLog::query()->select('id', 'user_name', 'event', 'subject_label', 'ip', 'created_at');
+        $query = AuditLog::query()->select('id', 'user_name', 'user_email', 'event', 'subject_label', 'ip', 'created_at');
         $isDate = fn ($v) => (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $v);
 
         return TableQuery::json($query, $request, [
@@ -123,6 +123,7 @@ class AuditLogController extends Controller
                 'when' => $log->created_at?->toIso8601String(),
                 'user_id' => $log->user_id,
                 'user' => $log->user_name,
+                'user_email' => $log->user_email,
                 'event' => $log->event,
                 'event_label' => self::EVENTS[$log->event] ?? $log->event,
                 'subject_type' => $log->subject_type,

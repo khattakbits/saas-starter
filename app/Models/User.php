@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Traits\HasRoles;
 
 #[Fillable(['name', 'email', 'password'])]
@@ -22,6 +23,35 @@ class User extends Authenticatable
     use HasFactory, HasRoles, Notifiable;
 
     protected $attributes = ['is_active' => true];
+
+    /**
+     * Users are central; the referencing tables are tenant-level and deliberately
+     * have no FK to `users` (cross-DB FKs are impossible). Pehle `nullOnDelete`
+     * DB-level hota tha — ab wohi behaviour explicitly yahan hai, warna user delete
+     * karne par dangling user_id rows reh jatin.
+     *
+     * Snapshot columns (`user_name`, `user_email`, `deleted_by_name`) jaan boojh kar
+     * chhori jati hain: audit/recycle-bin rows delete ke baad bhi readable rahen.
+     *
+     * Multi-DB note: tenancy aane par yeh loop har tenant connection par chalega
+     * (`tenants()->runForEach(...)`), kyunke rows tenant DBs mein hain.
+     */
+    protected static function booted(): void
+    {
+        static::deleted(function (User $user): void {
+            $references = [
+                ['attachments', 'uploaded_by'],
+                ['audit_logs', 'user_id'],
+                ['deleted_documents', 'deleted_by'],
+                ['document_views', 'user_id'],
+                ['email_logs', 'user_id'],
+            ];
+
+            foreach ($references as [$table, $column]) {
+                DB::table($table)->where($column, $user->getKey())->update([$column => null]);
+            }
+        });
+    }
 
     /**
      * Get the attributes that should be cast.
