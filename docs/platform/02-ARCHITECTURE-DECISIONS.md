@@ -313,7 +313,9 @@ Symlink hone ki wajah se Vite ko `server.fs.allow` mein `../khattakbits-core` ch
 
 Wajah: ek hi insaan aik product ke 2 tenants mein ho sakta hai (apni company + client ki company). Tenant-level mirror users rakhte to: same `sub` ke 2 rows, `user.disabled` webhook par N updates, seat counting double, 2FA state duplicate. Central rakhne se `sub` → 1 row aur disable ek hi jagah lagta hai.
 
-**Snapshot rule (aap ka point):** `audit_logs` mein `user_id` FK **nahi** hoga — sirf `unsignedBigInteger` + index, aur saath **`user_name` + `user_email`** ki copy. Aaj `user_name` maujood hai (`database/migrations/2026_10_27_070654_create_audit_logs_table.php:17`), `user_email` **nahi** — woh add karna hai. Wajah: tenant DB ka export/restore alag DB par restore ho sakta hai jahan `kb_users` ka woh row maujood na ho; snapshot ke baghair audit "user #47 ne invoice cancel ki" keh kar gum ho jata hai.
+**Snapshot rule (aap ka point):** `audit_logs` mein `user_id` FK **nahi** hoga — sirf `unsignedBigInteger` + index, aur saath **`user_name` + `user_email`** ki copy. Dono ab maujood hain (`database/migrations/2026_10_27_070654_create_audit_logs_table.php:19-20`); `user_email` Step 0 mein add hua. Wajah: tenant DB ka export/restore alag DB par restore ho sakta hai jahan `kb_users` ka woh row maujood na ho; snapshot ke baghair audit "user #47 ne invoice cancel ki" keh kar gum ho jata hai.
+
+**Users delete nahi hote — deactivate hote hain.** Central `kb_users` mein `blocked_at` / `is_active` set hota hai; row normally kabhi hard-delete nahi hoti, is liye tenant DBs mein `user_id` dangling hona hi nahi chahiye. `App\Models\User::booted()` ka `deleted` hook **last-resort safeguard** hai — sirf tab chalta hai jab koi tinker/DB-admin se user hard-delete kare (ya GDPR erasure). Jab tenancy aayegi, woh hook **har tenant DB par** iterate karna hoga (`tenants()->runForEach(...)`), kyunke referencing rows tenant DBs mein hain; warna sirf central DB ke rows detach honge aur baaki tenants mein dangling `user_id` reh jayenge.
 
 **(b) D2 — Event split: kaunsa event kahan.**
 
