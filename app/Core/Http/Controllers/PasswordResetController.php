@@ -2,7 +2,6 @@
 
 namespace App\Core\Http\Controllers;
 
-use App\Core\Support\Audit;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -11,6 +10,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use KhattakBits\Core\Support\Audit;
 
 class PasswordResetController extends Controller
 {

@@ -2,12 +2,12 @@
 
 namespace App\Core\Http\Controllers;
 
-use App\Core\Support\Audit;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use KhattakBits\Core\Support\Audit;
 
 class AuthController extends Controller
 {

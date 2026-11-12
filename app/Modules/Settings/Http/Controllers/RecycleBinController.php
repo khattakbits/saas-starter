@@ -3,13 +3,13 @@
 namespace App\Modules\Settings\Http\Controllers;
 
 use App\Core\Models\DeletedDocument;
-use App\Core\Support\Audit;
 use App\Core\Support\DocumentRegistry;
 use App\Http\Controllers\Controller;
 use App\Modules\Settings\Http\Resources\DeletedRow;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use KhattakBits\Core\Support\Audit;
 use KhattakBits\Core\Support\SettingsStore;
 use KhattakBits\Core\Support\TableQuery;
 

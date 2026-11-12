@@ -2,13 +2,13 @@
 
 namespace App\Core\Http\Controllers;
 
-use App\Core\Models\AuditLog;
 use App\Core\Models\DocumentView;
 use App\Core\Support\DocumentRegistry;
 use App\Core\Support\DocumentViews;
 use App\Http\Controllers\Controller;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
+use KhattakBits\Core\Models\AuditLog;
 
 class DocumentActivityController extends Controller
 {

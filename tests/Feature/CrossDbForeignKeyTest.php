@@ -3,15 +3,15 @@
 namespace Tests\Feature;
 
 use App\Core\Models\Attachment;
-use App\Core\Models\AuditLog;
-use App\Core\Support\Audit;
 use App\Models\User;
 use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use KhattakBits\Core\Models\AuditLog;
 use KhattakBits\Core\Models\EmailLog;
+use KhattakBits\Core\Support\Audit;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 

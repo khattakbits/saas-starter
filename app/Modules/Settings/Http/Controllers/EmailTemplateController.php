@@ -2,13 +2,13 @@
 
 namespace App\Modules\Settings\Http\Controllers;
 
-use App\Core\Support\Audit;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use KhattakBits\Core\Models\EmailTemplate;
+use KhattakBits\Core\Support\Audit;
 use KhattakBits\Core\Support\EmailTemplates;
 use KhattakBits\Core\Support\Mailer;
 

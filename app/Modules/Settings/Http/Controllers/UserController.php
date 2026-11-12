@@ -2,7 +2,6 @@
 
 namespace App\Modules\Settings\Http\Controllers;
 
-use App\Core\Support\Audit;
 use App\Core\Support\Authority;
 use App\Http\Controllers\Controller;
 use App\Models\User;
@@ -11,6 +10,7 @@ use App\Modules\Settings\Http\Resources\UserRow;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use KhattakBits\Core\Support\Audit;
 use KhattakBits\Core\Support\TableQuery;
 use Spatie\Permission\Models\Role;
 

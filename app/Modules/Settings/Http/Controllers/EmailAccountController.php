@@ -2,7 +2,6 @@
 
 namespace App\Modules\Settings\Http\Controllers;
 
-use App\Core\Support\Audit;
 use App\Http\Controllers\Controller;
 use App\Modules\Settings\Http\Requests\EmailAccountRequest;
 use App\Modules\Settings\Http\Resources\EmailAccountRow;
@@ -10,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use KhattakBits\Core\Models\EmailAccount;
+use KhattakBits\Core\Support\Audit;
 use KhattakBits\Core\Support\Mailer;
 use KhattakBits\Core\Support\TableQuery;
 
