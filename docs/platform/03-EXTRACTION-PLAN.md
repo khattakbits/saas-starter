@@ -1,9 +1,9 @@
-# 03 — Extraction Plan (Part A executed · Part B planned)
+# 03 — Extraction Plan (Part A + B executed · record in Part C)
 
-**Date:** 12 Nov 2026
-**Repo:** `E:/LaraProjects/saas-starter` (branch `master`)
+**Date:** 12 Nov 2026 (Part C added after execution)
+**Repo:** `E:/LaraProjects/saas-starter` (branch `extract/package-skeleton`, off `feat/cross-db-fk`)
 **Depends on:** `docs/platform/02-ARCHITECTURE-DECISIONS.md` (§0 D1–D5, §5.5 Step 0)
-**Rule:** Part A code hai (done). Part B **sirf plan** hai — is file mein koi package extract nahi hua.
+**Rule:** Part A code hai (done). Part B plan tha — ab **execute ho chuka hai**, aur jo actually hua wo Part C mein hai (deviations ke saath).
 
 ---
 
@@ -334,4 +334,80 @@ vendor/bin/pint --test app tests config
 
 ---
 
-*Part A implemented + verified. Part B plan hai — `IMPLEMENT` ke baghair koi package nahi banaya gaya.*
+# PART C — Executed (record)
+
+Part B ke steps **2 se 9 tak implement ho gaye**. Step 0 pehle hi ho chuka tha. Har step ke baad `php artisan test` chalaya gaya — **117 passed (588 assertions)** har dafa, aur `npm run build` bhi (734 modules).
+
+## Branches aur repos
+
+| Kahan | Kya |
+|---|---|
+| `saas-starter` branch `extract/package-skeleton` | `feat/cross-db-fk` (`6cdbf61`) se off; 8 commits |
+| `E:/LaraProjects/khattakbits-core` (git `main`) | 6 commits, 40 PHP files, 12 migrations |
+| `E:/LaraProjects/khattakbits-ui` (git `main`) | 1 commit, 51 files |
+
+Dono package directories **apne git repos** hain. Yeh plan mein likha nahi tha magar zaroori tha: files host repo se `mv` hoti hain, aur agar package tracked na ho to code kahin bhi version-controlled nahi rehta — `git status` host mein sirf deletions dikhata hai.
+
+## Commits
+
+```
+e825813 refactor(core): extract Support/Exceptions primitives
+ce6ddac refactor(core): extract mail/settings cluster and User model
+d86800f refactor(core): extract audit cluster
+470de99 refactor(core): extract documents cluster
+fbaf53f refactor(core): extract RBAC and menu cluster
+c8360a6 refactor(core): extract HTTP surface, routes, config and provider
+18a32d3 refactor(ui): extract resources/js/core to @khattakbits/ui
+00d5b11 chore: skeleton identity and README
+```
+
+## Kya kahan gaya
+
+| Package | Contents |
+|---|---|
+| `khattakbits/core` | `Support/` (Naming, TableQuery, DocumentColumns, ModuleRegistry, SettingsStore, Mailer, MailHostGuard, EmailTemplates, DocumentRegistry, DocumentViews, Audit, Authority, PermissionCatalog, MenuBuilder, Users) · `Models/` (User, Setting, EmailAccount, EmailLog, EmailTemplate, AuditLog, Attachment, DeletedDocument, DocumentView, Concerns/{HasAttachments,IsDocument}) · `Http/` (5 controllers, 2 middleware, base `Controller`) · `Jobs/SendEmailJob` · `Console/` (CreateAdmin, PurgeBin, PruneEmails) · `config/` (khattakbits, attachments, documents, email, security) · `routes/web.php` · 12 migrations |
+| `@khattakbits/ui` | 51 files: `layouts/`, `ui/`, `composables/`, `login3d/` |
+| host mein bacha | `app/Models/User.php` (thin), `app/Http/Controllers/Controller.php`, `HandleInertiaRequests`, `app/Modules/**`, `routes/web.php` (sirf module loop), `config/*.php` (published copies), `resources/js/Pages/**` |
+
+`app/Core` **delete ho gaya** — grep se confirm: `App\Core` ka zero reference (sirf historical docs mein).
+
+## Plan se deviations (aur kyun)
+
+1. **Migrations step 3 mein gayi, step 7 mein nahi.** Plan ne unhein provider ke saath rakha tha, magar models aur unki tables aik hi unit hain — models package mein aur tables host mein rakhna adhoora hai. Is liye `loadMigrationsFrom()` step 3 mein hi provider mein add kiya. **6 migrations** (4 nahi): users, admin columns, settings, email_accounts, email_logs, email_templates. Laravel merged paths ko filename se sort karta hai, is liye `0001_..` ordering barqarar rahi.
+
+2. **`App\Models\User` poora model ban kar gaya**, thin subclass host mein. `Database\Factories\UserFactory` ka import aur `@use HasFactory<UserFactory>` generic hata diya (wo class host ki hai) — `HasFactory` runtime class name se factory resolve karta hai, is liye `User::factory()` bilkul waisa hi chalta hai. `#[Fillable]` / `#[Hidden]` attributes subclass par bhi lagte hain kyunke Laravel 13 ka `resolveClassAttribute()` parent chain walk karta hai.
+
+3. **Config files duplicate hain — jaan boojh kar.** `mergeConfigFrom()` config cache hone par **no-op** hai. Sirf package copy rakhne ka matlab hota ke `config:cache` ke baad limits gayab. Is liye: package defaults + host published copies, aur provider `vendor:publish --tag=khattakbits-config` deta hai.
+
+4. **`Support\Users` resolver add kiya.** Plan ne step 6 mein `config('khattakbits.user_model')` ka zikr kiya tha; usse step 7 mein implement kiya — `khattakbits.user_model` → `auth.providers.users.model` → core `User`. `PasswordResetController` aur `CreateAdmin` isse chalte hain, is liye host ka thin `User` hi instantiate hota hai (verify: `Users::model()` → `App\Models\User`).
+
+5. **`KhattakBits\Core\Http\Controllers\Controller` naya class.** Plan ne miss kiya tha ke `AttachmentController` aur `DocumentActivityController` host ke base controller par depend karte hain. Package ka apna base bana kar dono repoint kiye.
+
+6. **Vite `resolve.dedupe` lazmi nikla.** Sirf `server.fs.allow` + alias kaafi nahi tha — build `@inertiajs/vue3` resolve karne par fail hota tha, kyunke project root se bahar wali files apne directory chain mein `node_modules` dhoondti hain. `dedupe: ['vue', '@inertiajs/vue3', '@tanstack/vue-query', '@tanstack/vue-virtual', 'three']` se hal hua.
+
+7. **Alias ka naam `@core` hi rakha**, `@khattakbits/ui` nahi. 40 host files ke imports badalne ka koi faida nahi tha; sirf alias ka target badla. Package ke **andar** ke 18 imports relative kar diye (`tools/relativize-core-imports.mjs`), taake package kisi bhi host alias par depend na kare.
+
+8. **`composer.json` constraint `dev-main`**, `*@dev` nahi — `composer validate` unbound constraint par warn karta hai.
+
+## Do cheezein jo plan mein thi magar nahi ki gayin
+
+- **Inertia `resolve` merge nahi chahiye tha.** Pages host mein hi hain (`resources/js/Pages`), sirf components move hue — is liye `createInertiaApp` ka page resolution bilkul waisa hi hai.
+- **`resources/js/app.js` chhua nahi gaya.** `@inertiajs/vite` ka `<pages>` shorthand pehle se hi single glob use karta hai.
+
+## Rollback
+
+Har step aik alag commit hai, aur package commits alag repos mein. Rollback ke do raaste:
+
+- Host: `git revert <sha>` us step ke liye (step 3+ ke liye package repo mein bhi revert karna hoga, warna class missing hogi).
+- Poora extraction: host branch `feat/cross-db-fk` par wapas, aur dono package directories chhod dein — kuch bhi shared nahi tha.
+
+## Aakhri verification
+
+```
+php artisan test     → 117 passed (588 assertions), ~26s
+npm run build        → 734 modules transformed, built in ~3.5s
+composer validate    → ./composer.json is valid
+grep -r "App\\Core"  → zero (app, routes, config, database, tests, bootstrap)
+php artisan route:list → login, logout, profile, attachments, forgot-password sab maujood
+```
+
