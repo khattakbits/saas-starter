@@ -2,9 +2,9 @@
 
 namespace App\Modules\Examples\Models;
 
-use App\Core\Exceptions\DocumentException;
 use App\Core\Models\Concerns\IsDocument;
 use Illuminate\Database\Eloquent\Model;
+use KhattakBits\Core\Exceptions\DocumentException;
 
 class DemoEntry extends Model
 {

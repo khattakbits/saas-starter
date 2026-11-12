@@ -5,13 +5,13 @@ namespace App\Modules\Settings\Http\Controllers;
 use App\Core\Models\EmailAccount;
 use App\Core\Support\Audit;
 use App\Core\Support\Mailer;
-use App\Core\Support\TableQuery;
 use App\Http\Controllers\Controller;
 use App\Modules\Settings\Http\Requests\EmailAccountRequest;
 use App\Modules\Settings\Http\Resources\EmailAccountRow;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use KhattakBits\Core\Support\TableQuery;
 
 class EmailAccountController extends Controller
 {

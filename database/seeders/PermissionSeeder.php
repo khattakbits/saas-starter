@@ -3,8 +3,8 @@
 namespace Database\Seeders;
 
 use App\Core\Support\DocumentRegistry;
-use App\Core\Support\ModuleRegistry;
 use Illuminate\Database\Seeder;
+use KhattakBits\Core\Support\ModuleRegistry;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;

@@ -4,6 +4,7 @@ namespace App\Core\Support;
 
 use App\Core\Models\EmailTemplate;
 use InvalidArgumentException;
+use KhattakBits\Core\Support\ModuleRegistry;
 
 /**
  * Email templates ki registry: defaults code mein, DB sirf overrides rakhti hai.

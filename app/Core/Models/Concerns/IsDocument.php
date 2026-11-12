@@ -2,13 +2,13 @@
 
 namespace App\Core\Models\Concerns;
 
-use App\Core\Exceptions\DocumentException;
 use App\Core\Models\DeletedDocument;
 use App\Core\Support\Audit;
 use App\Core\Support\DocumentRegistry;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\DB;
+use KhattakBits\Core\Exceptions\DocumentException;
 
 /**
  * Table mein DocumentColumns::add() ke columns chahiye.

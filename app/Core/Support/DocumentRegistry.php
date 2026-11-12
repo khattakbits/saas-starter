@@ -4,6 +4,7 @@ namespace App\Core\Support;
 
 use App\Models\User;
 use Illuminate\Support\Str;
+use KhattakBits\Core\Support\ModuleRegistry;
 
 final class DocumentRegistry
 {

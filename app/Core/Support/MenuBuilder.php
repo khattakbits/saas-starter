@@ -3,6 +3,7 @@
 namespace App\Core\Support;
 
 use App\Models\User;
+use KhattakBits\Core\Support\ModuleRegistry;
 
 final class MenuBuilder
 {

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "516728f00f70e0a5b4349b82c473b825",
+    "content-hash": "3ae7a25cbfd0a1ea390d32f25d96400f",
     "packages": [
         {
             "name": "brick/math",
@@ -1130,6 +1130,55 @@
                 "source": "https://github.com/inertiajs/inertia-laravel/tree/v3.5.2"
             },
             "time": "2026-10-21T19:41:00+00:00"
+        },
+        {
+            "name": "khattakbits/core",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "../khattakbits-core",
+                "reference": "722c9d76d9cf89e8cefb440865b8fce2bbc449da"
+            },
+            "require": {
+                "illuminate/console": "^13.0",
+                "illuminate/database": "^13.0",
+                "illuminate/http": "^13.0",
+                "illuminate/routing": "^13.0",
+                "illuminate/support": "^13.0",
+                "illuminate/view": "^13.0",
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.27",
+                "orchestra/testbench": "^11.0",
+                "phpunit/phpunit": "^12.5"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "KhattakBits\\Core\\CoreServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "KhattakBits\\Core\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "KhattakBits\\Core\\Tests\\": "tests/"
+                }
+            },
+            "license": [
+                "proprietary"
+            ],
+            "description": "KhattakBits shared kernel: audit, mailer, documents, RBAC, settings, modules",
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
         },
         {
             "name": "laravel/framework",
@@ -9034,7 +9083,9 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "khattakbits/core": 20
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

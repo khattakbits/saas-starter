@@ -3,6 +3,7 @@
 namespace App\Core\Support;
 
 use Illuminate\Support\Str;
+use KhattakBits\Core\Support\ModuleRegistry;
 use Spatie\Permission\Models\Permission;
 
 final class PermissionCatalog

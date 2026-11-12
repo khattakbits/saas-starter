@@ -7,7 +7,6 @@ use App\Core\Console\PruneEmails;
 use App\Core\Console\PurgeBin;
 use App\Core\Support\DocumentRegistry;
 use App\Core\Support\EmailTemplates;
-use App\Core\Support\ModuleRegistry;
 use App\Core\Support\SettingsStore;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use KhattakBits\Core\Support\ModuleRegistry;
 
 class CoreServiceProvider extends ServiceProvider
 {

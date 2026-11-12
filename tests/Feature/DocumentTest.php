@@ -2,16 +2,16 @@
 
 namespace Tests\Feature;
 
-use App\Core\Exceptions\DocumentException;
 use App\Core\Models\Attachment;
 use App\Core\Models\DeletedDocument;
-use App\Core\Support\Naming;
 use App\Core\Support\SettingsStore;
 use App\Models\User;
 use App\Modules\Examples\Models\DemoEntry;
 use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use KhattakBits\Core\Exceptions\DocumentException;
+use KhattakBits\Core\Support\Naming;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 

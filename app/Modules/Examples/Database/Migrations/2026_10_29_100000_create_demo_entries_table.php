@@ -1,9 +1,9 @@
 <?php
 
-use App\Core\Support\DocumentColumns;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use KhattakBits\Core\Support\DocumentColumns;
 
 return new class extends Migration
 {

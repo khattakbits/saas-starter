@@ -6,12 +6,12 @@ use App\Core\Models\DeletedDocument;
 use App\Core\Support\Audit;
 use App\Core\Support\DocumentRegistry;
 use App\Core\Support\SettingsStore;
-use App\Core\Support\TableQuery;
 use App\Http\Controllers\Controller;
 use App\Modules\Settings\Http\Resources\DeletedRow;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use KhattakBits\Core\Support\TableQuery;
 
 class RecycleBinController extends Controller
 {

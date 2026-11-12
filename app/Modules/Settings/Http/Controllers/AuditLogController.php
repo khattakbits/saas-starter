@@ -4,12 +4,12 @@ namespace App\Modules\Settings\Http\Controllers;
 
 use App\Core\Models\AuditLog;
 use App\Core\Support\DocumentRegistry;
-use App\Core\Support\TableQuery;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Modules\Settings\Http\Resources\AuditRow;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use KhattakBits\Core\Support\TableQuery;
 use Spatie\Permission\Models\Role;
 
 class AuditLogController extends Controller

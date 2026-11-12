@@ -3,12 +3,12 @@
 namespace Tests\Feature;
 
 use App\Core\Models\Attachment;
-use App\Core\Support\Naming;
 use App\Models\User;
 use App\Modules\Examples\Models\DemoEntry;
 use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use KhattakBits\Core\Support\Naming;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 

@@ -5,13 +5,13 @@ namespace App\Modules\Settings\Http\Controllers;
 use App\Core\Support\Audit;
 use App\Core\Support\Authority;
 use App\Core\Support\PermissionCatalog;
-use App\Core\Support\TableQuery;
 use App\Http\Controllers\Controller;
 use App\Modules\Settings\Http\Requests\RoleRequest;
 use App\Modules\Settings\Http\Resources\RoleRow;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use KhattakBits\Core\Support\TableQuery;
 use Spatie\Permission\Models\Role;
 
 class RoleController extends Controller

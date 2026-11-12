@@ -2,9 +2,6 @@
 
 namespace App\Modules\Examples\Http\Controllers;
 
-use App\Core\Exceptions\DocumentException;
-use App\Core\Support\Naming;
-use App\Core\Support\TableQuery;
 use App\Http\Controllers\Controller;
 use App\Modules\Examples\Http\Requests\EntryRequest;
 use App\Modules\Examples\Http\Resources\EntryRow;
@@ -12,6 +9,9 @@ use App\Modules\Examples\Models\DemoEntry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use KhattakBits\Core\Exceptions\DocumentException;
+use KhattakBits\Core\Support\Naming;
+use KhattakBits\Core\Support\TableQuery;
 
 class EntryController extends Controller
 {
