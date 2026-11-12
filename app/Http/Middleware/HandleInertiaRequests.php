@@ -2,10 +2,10 @@
 
 namespace App\Http\Middleware;
 
-use App\Core\Support\MenuBuilder;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use KhattakBits\Core\Support\Mailer;
+use KhattakBits\Core\Support\MenuBuilder;
 use KhattakBits\Core\Support\SettingsStore;
 
 class HandleInertiaRequests extends Middleware

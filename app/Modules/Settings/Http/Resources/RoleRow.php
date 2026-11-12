@@ -2,9 +2,9 @@
 
 namespace App\Modules\Settings\Http\Resources;
 
-use App\Core\Support\Authority;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use KhattakBits\Core\Support\Authority;
 
 class RoleRow extends JsonResource
 {

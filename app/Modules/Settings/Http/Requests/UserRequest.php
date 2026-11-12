@@ -2,12 +2,12 @@
 
 namespace App\Modules\Settings\Http\Requests;
 
-use App\Core\Support\Authority;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Validator;
+use KhattakBits\Core\Support\Authority;
 
 class UserRequest extends FormRequest
 {
