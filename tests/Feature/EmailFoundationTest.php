@@ -3,11 +3,6 @@
 namespace Tests\Feature;
 
 use App\Core\Models\AuditLog;
-use App\Core\Models\EmailAccount;
-use App\Core\Models\EmailLog;
-use App\Core\Support\Mailer;
-use App\Core\Support\MailHostGuard;
-use App\Core\Support\SettingsStore;
 use App\Models\User;
 use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -17,6 +12,11 @@ use Illuminate\Mail\MailManager;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
+use KhattakBits\Core\Models\EmailAccount;
+use KhattakBits\Core\Models\EmailLog;
+use KhattakBits\Core\Support\Mailer;
+use KhattakBits\Core\Support\MailHostGuard;
+use KhattakBits\Core\Support\SettingsStore;
 use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\Mailer\Envelope;
 use Symfony\Component\Mailer\Exception\TransportException;

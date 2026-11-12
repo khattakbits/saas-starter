@@ -5,8 +5,8 @@ namespace App\Core\Console;
 use App\Core\Models\DeletedDocument;
 use App\Core\Support\Audit;
 use App\Core\Support\DocumentRegistry;
-use App\Core\Support\SettingsStore;
 use Illuminate\Console\Command;
+use KhattakBits\Core\Support\SettingsStore;
 
 class PurgeBin extends Command
 {

@@ -3,11 +3,11 @@
 namespace App\Modules\Settings\Http\Controllers;
 
 use App\Core\Support\Audit;
-use App\Core\Support\SettingsStore;
 use App\Http\Controllers\Controller;
 use DateTimeZone;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use KhattakBits\Core\Support\SettingsStore;
 
 class SystemController extends Controller
 {

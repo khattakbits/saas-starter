@@ -2,15 +2,15 @@
 
 namespace App\Modules\Settings\Http\Controllers;
 
-use App\Core\Models\EmailTemplate;
 use App\Core\Support\Audit;
-use App\Core\Support\EmailTemplates;
-use App\Core\Support\Mailer;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use KhattakBits\Core\Models\EmailTemplate;
+use KhattakBits\Core\Support\EmailTemplates;
+use KhattakBits\Core\Support\Mailer;
 
 class EmailTemplateController extends Controller
 {

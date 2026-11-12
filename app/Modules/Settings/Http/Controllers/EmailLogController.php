@@ -2,11 +2,11 @@
 
 namespace App\Modules\Settings\Http\Controllers;
 
-use App\Core\Models\EmailLog;
 use App\Http\Controllers\Controller;
 use App\Modules\Settings\Http\Resources\EmailLogRow;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use KhattakBits\Core\Models\EmailLog;
 use KhattakBits\Core\Support\TableQuery;
 
 class EmailLogController extends Controller

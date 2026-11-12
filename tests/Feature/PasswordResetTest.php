@@ -3,13 +3,13 @@
 namespace Tests\Feature;
 
 use App\Core\Models\AuditLog;
-use App\Core\Models\EmailAccount;
-use App\Core\Models\EmailLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Inertia\Testing\AssertableInertia as Assert;
+use KhattakBits\Core\Models\EmailAccount;
+use KhattakBits\Core\Models\EmailLog;
 use Tests\TestCase;
 
 class PasswordResetTest extends TestCase

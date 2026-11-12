@@ -2,13 +2,13 @@
 
 namespace Tests\Feature;
 
-use App\Core\Models\EmailLog;
-use App\Core\Models\EmailTemplate;
-use App\Core\Support\EmailTemplates;
 use App\Models\User;
 use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
+use KhattakBits\Core\Models\EmailLog;
+use KhattakBits\Core\Models\EmailTemplate;
+use KhattakBits\Core\Support\EmailTemplates;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 

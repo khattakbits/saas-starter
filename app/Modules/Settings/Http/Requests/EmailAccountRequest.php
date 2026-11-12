@@ -2,10 +2,10 @@
 
 namespace App\Modules\Settings\Http\Requests;
 
-use App\Core\Support\MailHostGuard;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
+use KhattakBits\Core\Support\MailHostGuard;
 
 class EmailAccountRequest extends FormRequest
 {
