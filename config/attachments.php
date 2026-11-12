@@ -38,6 +38,11 @@ return [
             'view' => 'examples.entries.view',
             'update' => 'examples.entries.update',
             'delete' => 'examples.entries.update',
+            // Record-level scope: sirf record ka owner (created_by) ya manage permission
+            // wala user attachment dekh/saka aur delete kar sakta hai (B-1 fix).
+            'scope' => 'owner',
+            'owner_column' => 'created_by',
+            'manage' => 'examples.entries.update',
         ],
 
         // Asli doctype ka namuna (key model ke snake_case naam se milni chahiye, ya attachmentType() override karein):
