@@ -18,6 +18,24 @@ return [
             'url' => '/examples/entries/{id}',
         ],
     ],
+    // Module apni email templates bhi register kar sakta hai (defaults code mein rehte hain)
+    'email_templates' => [
+        'demo_entry_submitted' => [
+            'name' => 'Demo entry submitted',
+            'subject' => '{{ app_name }}: {{ entry_name }} was submitted',
+            'body' => "Hi {{ user_name }},\n\n{{ entry_name }} was submitted by {{ user_name }}.\n\nYou are receiving this because you follow the Examples module.",
+            'placeholders' => [
+                'app_name' => 'Workspace name from the settings',
+                'user_name' => 'Name of the person receiving the email',
+                'entry_name' => 'Name of the demo entry, e.g. DEMO-00001',
+            ],
+            'required' => ['entry_name'],
+            'samples' => [
+                'user_name' => 'Ayesha Khan',
+                'entry_name' => 'DEMO-00001',
+            ],
+        ],
+    ],
     'sections' => [
         [
             'title' => 'Doctypes',

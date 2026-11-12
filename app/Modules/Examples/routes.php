@@ -10,7 +10,12 @@ Route::prefix('examples')->group(function () {
     Route::inertia('submitted', 'Examples/Submitted');
     Route::inertia('settings', 'Examples/Settings');
     Route::inertia('empty', 'Examples/Empty');
-    Route::get('forbidden', fn () => abort(403));
+
+    // B-2: 403 page ka demo route sirf local/testing mein. Production mein
+    // yeh route maujood hi nahi hona chahiye.
+    if (app()->environment(['local', 'testing'])) {
+        Route::get('forbidden', fn () => abort(403));
+    }
 });
 
 Route::prefix('examples/entries')->group(function () {

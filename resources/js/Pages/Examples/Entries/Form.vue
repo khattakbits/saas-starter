@@ -56,14 +56,15 @@ const remove = () => router.delete(`/examples/entries/${props.entry.id}`, { onFi
             <DocStatusBadge v-else :status="0" />
         </template>
         <template #actions>
-            <button v-if="editing && can('examples.entries.delete')" type="button" class="btn btn-danger"
-                @click="deleteOpen = true">Delete</button>
+            <button v-if="editing && !form.isDirty && can('examples.entries.delete')" type="button"
+                class="btn btn-danger" @click="deleteOpen = true">Delete</button>
             <button v-if="editing && form.isDirty" type="button" class="btn" @click="form.reset()">Discard</button>
-            <button type="submit" form="entry-form" class="btn" :class="!editing || form.isDirty ? 'btn-primary' : ''"
-                :disabled="form.processing || (editing && !form.isDirty)">Save</button>
-            <button v-if="editing && can('examples.entries.submit')" type="button" class="btn btn-primary"
-                :disabled="form.isDirty" :title="form.isDirty ? 'Save your changes first' : ''"
-                @click="submitOpen = true">Submit</button>
+            <button v-if="!editing || form.isDirty" type="submit" form="entry-form" class="btn btn-primary"
+                :disabled="form.processing">
+                {{ form.processing ? 'Saving...' : 'Save' }}
+            </button>
+            <button v-if="editing && !form.isDirty && can('examples.entries.submit')" type="button"
+                class="btn btn-primary" @click="submitOpen = true">Submit</button>
         </template>
 
         <template #side>

@@ -18,6 +18,8 @@ class AuditLogController extends Controller
         'auth.login' => 'Login',
         'auth.logout' => 'Logout',
         'auth.failed' => 'Failed login',
+        'auth.password_requested' => 'Password reset requested',
+        'auth.password_reset' => 'Password changed',
         'user.created' => 'User created',
         'user.updated' => 'User updated',
         'user.status' => 'User enabled/disabled',
@@ -33,6 +35,12 @@ class AuditLogController extends Controller
         'doc.deleted' => 'Moved to Recycle Bin',
         'doc.restored' => 'Document restored',
         'doc.purged' => 'Permanently deleted',
+        'email_account.created' => 'Email account created',
+        'email_account.updated' => 'Email account updated',
+        'email_account.deleted' => 'Email account deleted',
+        'email_account.tested' => 'Email account tested',
+        'email_template.updated' => 'Email template updated',
+        'email_template.reset' => 'Email template reset',
     ];
 
     public function index(Request $request)

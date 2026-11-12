@@ -28,12 +28,45 @@ class AttachmentController extends Controller
         }
     }
 
-    private function ensureRecord(array $cfg, int $id): void
+    /**
+     * B-1 fix: type-level permission kaafi nahi thi. `/attachments/{id}` par id
+     * enumerate kar ke doosre record ki file download ya delete ho sakti thi.
+     * Ab parent record resolve hota hai aur per-record authorization lagti hai:
+     *   1. record maujood ho (warna 404),
+     *   2. agar type mein `authorize` callback hai to wohi faisla kare,
+     *   3. warna `scope => owner` par sirf owner ya `manage` permission wala user.
+     */
+    private function authorizeRecord(Request $request, array $cfg, int $id, string $action): void
     {
         $model = $cfg['model'] ?? null;
-        if ($model) {
-            abort_unless($model::query()->whereKey($id)->exists(), 404);
+
+        // Demo/legacy types (model null) sirf local environment mein hote hain.
+        if (! $model) {
+            return;
         }
+
+        $record = $model::query()->find($id);
+        abort_if($record === null, 404);
+
+        $authorize = $cfg['authorize'] ?? null;
+        if (is_callable($authorize)) {
+            abort_unless($authorize($request->user(), $record, $action) === true, 403);
+
+            return;
+        }
+
+        if (($cfg['scope'] ?? 'type') !== 'owner') {
+            return;
+        }
+
+        $ownerColumn = $cfg['owner_column'] ?? 'created_by';
+
+        if ((int) ($record->{$ownerColumn} ?? 0) === (int) $request->user()->getKey()) {
+            return;
+        }
+
+        $manage = $cfg['manage'] ?? $cfg['update'] ?? null;
+        abort_unless($manage !== null && $request->user()->can($manage), 403);
     }
 
     private function row(Attachment $a): array
@@ -46,7 +79,7 @@ class AttachmentController extends Controller
         $data = $request->validate(['type' => ['required', 'string', 'max:40'], 'id' => ['required', 'integer', 'min:1']]);
         $cfg = $this->typeConfig($data['type']);
         $this->allow($request, $cfg, 'view');
-        $this->ensureRecord($cfg, (int) $data['id']);
+        $this->authorizeRecord($request, $cfg, (int) $data['id'], 'view');
 
         /** @var Collection<int, Attachment> $attachments */
         $attachments = Attachment::query()
@@ -70,7 +103,7 @@ class AttachmentController extends Controller
 
         $cfg = $this->typeConfig($data['type']);
         $this->allow($request, $cfg, 'update');
-        $this->ensureRecord($cfg, (int) $data['id']);
+        $this->authorizeRecord($request, $cfg, (int) $data['id'], 'update');
 
         $file = $request->file('file');
         $this->enforceLimits($request, $data['type'], (int) $data['id'], (int) $file->getSize());
@@ -92,7 +125,10 @@ class AttachmentController extends Controller
 
     public function show(Request $request, Attachment $attachment)
     {
-        $this->allow($request, $this->typeConfig($attachment->attachable_type), 'view');
+        $cfg = $this->typeConfig($attachment->attachable_type);
+        $this->allow($request, $cfg, 'view');
+        $this->authorizeRecord($request, $cfg, (int) $attachment->attachable_id, 'view');
+
         abort_unless(Storage::exists($attachment->path), 404);
 
         // Hamesha download (inline nahi): HTML/SVG file browser mein chal kar XSS na kar sake
@@ -101,7 +137,9 @@ class AttachmentController extends Controller
 
     public function destroy(Request $request, Attachment $attachment)
     {
-        $this->allow($request, $this->typeConfig($attachment->attachable_type), 'delete');
+        $cfg = $this->typeConfig($attachment->attachable_type);
+        $this->allow($request, $cfg, 'delete');
+        $this->authorizeRecord($request, $cfg, (int) $attachment->attachable_id, 'delete');
 
         Storage::delete($attachment->path);
         $attachment->delete();

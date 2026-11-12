@@ -88,6 +88,45 @@ class SecurityTest extends TestCase
         $this->actingAs($user)->get('/profile')->assertRedirect('/login');
     }
 
+    public function test_login_normalizes_email_casing_and_whitespace(): void
+    {
+        $user = $this->makeUser();
+
+        $this->post('/login', [
+            'email' => '  '.strtoupper($user->email).'  ',
+            'password' => 'password-12345',
+        ])->assertRedirect('/');
+
+        $this->assertAuthenticatedAs($user);
+    }
+
+    public function test_login_redirect_rejects_open_redirect_attacks(): void
+    {
+        $user = $this->makeUser();
+
+        // Malicious external domain must be rejected in favor of default intended route
+        $this->post('/login?redirect_uri=https://evil.attacker.com', [
+            'email' => $user->email,
+            'password' => 'password-12345',
+        ])->assertRedirect('/');
+
+        auth()->logout();
+
+        // Protocol-relative URI must be rejected
+        $this->post('/login?redirect_uri=//evil.attacker.com', [
+            'email' => $user->email,
+            'password' => 'password-12345',
+        ])->assertRedirect('/');
+
+        auth()->logout();
+
+        // Safe relative internal route must be honored
+        $this->post('/login?redirect_uri=/profile', [
+            'email' => $user->email,
+            'password' => 'password-12345',
+        ])->assertRedirect('/profile');
+    }
+
     public function test_admin_create_works_on_a_database_without_the_super_admin_role(): void
     {
         Role::where('name', 'super-admin')->delete();
