@@ -1,13 +1,14 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "khattakbits/product-skeleton",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "description": "KhattakBits product skeleton: thin Laravel app that consumes khattakbits/core and @khattakbits/ui.",
     "keywords": [
-        "laravel",
-        "framework"
+        "khattakbits",
+        "saas",
+        "skeleton"
     ],
-    "license": "MIT",
+    "license": "proprietary",
     "repositories": [
         {
             "type": "path",
@@ -20,7 +21,7 @@
     "require": {
         "php": "^8.3",
         "inertiajs/inertia-laravel": "^3.5",
-        "khattakbits/core": "*@dev",
+        "khattakbits/core": "dev-main",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
         "spatie/laravel-permission": "^8.3"

@@ -1,58 +1,91 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# KhattakBits — product skeleton
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Thin Laravel application. Ismein product ka apna code hai; platform ka saara
+shared kernel aur UI do private packages se aata hai.
 
-## About Laravel
-
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
-
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```
+khattakbits/
+├── saas-starter/          ← yeh repo: product skeleton
+├── khattakbits-core/      ← PHP kernel (khattakbits/core)
+└── khattakbits-ui/        ← Vue layer (@khattakbits/ui)
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+## Skeleton mein kya bacha hai
 
-## Contributing
+| Path | Kya hai |
+|---|---|
+| `app/Models/User.php` | thin subclass of `KhattakBits\Core\Models\User` — product yahan apni relations/traits add karta hai |
+| `app/Http/Controllers/Controller.php` | product base controller |
+| `app/Http/Middleware/HandleInertiaRequests.php` | Inertia shared props (app name, menu, permissions) |
+| `app/Modules/**` | product modules (`Examples`, `Settings`) — har module apni routes, migrations, controllers, Vue pages laata hai |
+| `app/Providers/AppServiceProvider.php` | product-level bindings |
+| `routes/web.php` | sirf module route loop; core routes package se aate hain |
+| `config/*.php` | published copies of the core config |
+| `resources/js/Pages/**` | product Inertia pages |
+| `resources/js/app.js` | Inertia entry point |
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+`app/Core` **maujood nahi** — wo poora `khattakbits/core` mein chala gaya hai
+(`docs/platform/03-EXTRACTION-PLAN.md`).
 
-## Code of Conduct
+## Packages
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### `khattakbits/core`
 
-## Security Vulnerabilities
+Composer path repository se aata hai (`composer.json` → `repositories`), dev
+mein symlink, production mein `vcs` repository. Andar: user model, settings,
+mailer, audit, documents (attachments / recycle bin / activity), RBAC
+(`Authority`, `PermissionCatalog`), module registry, core routes, config
+defaults aur migrations.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Auto-discovered hai (`extra.laravel.providers`), is liye
+`bootstrap/providers.php` mein register **nahi** karna — warna double boot hoga.
 
-## License
+### `@khattakbits/ui`
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+`package.json` mein `file:../khattakbits-ui`. Source-consumed — koi build step
+nahi, host ka Vite seedha compile karta hai. Host imports `@core/...` likhte
+hain; `vite.config.js` ka alias usse package par le jata hai.
+
+## Setup
+
+```bash
+composer install
+npm install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate --seed
+php artisan admin:create you@example.com --name="Super Admin"
+npm run dev
+```
+
+`DatabaseSeeder` sirf permissions/roles banata hai. Admin user `admin:create`
+se banta hai (password prompt, kam az kam 10 characters).
+
+## Zaroori conventions
+
+- **Cross-DB foreign keys nahi.** Users central hain, baqi tables tenant-level.
+  `user_id` par FK nahi lagti — snapshot columns (`user_name`, `user_email`,
+  `deleted_by_name`) audit aur recycle-bin rows ko delete ke baad bhi readable
+  rakhte hain.
+- **Users delete nahi hote**, deactivate hote hain (`blocked_at` / `is_active`).
+  `User::booted()` ka `deleted` hook sirf last-resort safeguard hai.
+- **Config publish kiya hua hi asal hai.** `mergeConfigFrom()` config cache ke
+  saath kaam nahi karta, is liye product apni `config/*.php` copies rakhta hai.
+  `php artisan vendor:publish --tag=khattakbits-config` se refresh karein.
+- **Naya doctype** add karna ho to `config/attachments.php` ke `types` mein entry
+  dalein aur `config/documents.php` + `IsDocument` concern follow karein.
+
+## Tests
+
+```bash
+php artisan test      # 117 passed (588 assertions)
+npm run build         # Vite
+```
+
+CI: `.github/workflows/tests.yml` — PHP 8.3 aur 8.5 matrix, sqlite `:memory:`.
+
+## Docs
+
+- `docs/platform/02-ARCHITECTURE-DECISIONS.md` — approved decisions, package
+  split, tenancy design
+- `docs/platform/03-EXTRACTION-PLAN.md` — extraction plan aur jo actually hua

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "3ae7a25cbfd0a1ea390d32f25d96400f",
+    "content-hash": "916844a35b9667da33c69177f4b435ed",
     "packages": [
         {
             "name": "brick/math",
@@ -1137,7 +1137,7 @@
             "dist": {
                 "type": "path",
                 "url": "../khattakbits-core",
-                "reference": "cfb0accefabb327f40fcb008b0f77f10f812e3db"
+                "reference": "95f7cb68e4070e7e2c20e61216a31c5492fe3838"
             },
             "require": {
                 "illuminate/auth": "^13.0",
