@@ -6,6 +6,7 @@ import Icon from '@core/ui/Icon.vue'
 import UserMenu from '@core/layouts/UserMenu.vue'
 import SubNav from '@core/layouts/SubNav.vue'
 import CommandPalette from '@core/layouts/CommandPalette.vue'
+import Toaster from '@core/ui/Toaster.vue'
 
 const page = usePage()
 const appName = computed(() => page.props.app?.name ?? 'App')
@@ -72,5 +73,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </main>
 
         <CommandPalette v-model="paletteOpen" />
+        <Toaster />
     </div>
 </template>
