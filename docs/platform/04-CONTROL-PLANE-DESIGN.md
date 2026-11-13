@@ -361,7 +361,7 @@ name                string(120)
 redirect_uris       json                         // must include '<domain>/auth/kb/callback'
 post_logout_uris    json        nullable
 pkce_required       boolean default true
-scopes              json        nullable        // ['openid','profile','email','subscriptions:read']
+scopes              json        nullable        // ['openid','profile','email','subscription','entitlements'] — see 05 §1.5
 is_first_party      boolean default false
 secret_last4        string(4)   nullable        // full secret kabhi store nahi
 status              string(20)  default 'active'  // active|rotated|revoked
@@ -1001,6 +1001,13 @@ Asar: `subscription_events.type` enum mein `refunded` add (§1.3), `payments.sta
 | 7 | Naya **§7.1 Test plan** (T1–T12) | §7.1 | "feature tests" S9 mein ek lafz tha — koi list nahi thi |
 
 **Kya nahi badla:** 18 tables ki list, ERD, entitlement algorithm/hash/cache, admin screens (28), storefront routes, manifest sync, sprint effort (~51 din). In mein koi review point nahi tha.
+
+### 13 Nov 2026 — cross-doc sync with `05-IDENTITY-HUB-SPEC.md` (v3)
+
+| # | Kya badla | Kahan | Kyun |
+|---|---|---|---|
+| 8 | `product_oauth_clients.scopes` example `['openid','profile','email','subscriptions:read']` → `['openid','profile','email','subscription','entitlements']` | §1.3 | `05` §1.5 scope set authoritative hai; purana example illustrative tha aur OAuth spec se match nahi karta tha |
+| 9 | `oauth_client_id` ka type note confirm | §1.3 | `05` §0.2 ne verify kiya ke Passport v13.10 client id **UUID** deta hai — `string(64)` sahi choice thi |
 
 ---
 
