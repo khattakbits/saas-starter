@@ -1,25 +1,26 @@
 # 08 — Example Product Integration (MizaanbitsERP)
 
-**Date:** 13 Nov 2026
-**Repo:** `E:/LaraProjects/saas-starter` (branch `extract/package-skeleton`)
-**Depends on:** `04-CONTROL-PLANE-DESIGN.md` (§1.3 catalog tables, §3.3 snapshot, §5.3 purchase flow, §6.1 manifest), `05-IDENTITY-HUB-SPEC.md` (§1.2 endpoints, §1.3 client registration, §1.4 redirect allowlist, §1.9 refresh tokens, §3.2 `resolve`, §3.4 renew-link, §3.5 `users/changes`, §4.1–4.3 webhooks, §5.2–5.3.1 disable propagation), `07-MULTI-TENANCY-DESIGN.md` (§2 table split, §3.1 route structure, §3.6 SSO flow, §3.6.1 membership source, §3.8 membership check, §5.2 `tenantUrl()`, §6.6 owner mapping, §9 entitlements)
-**Scope:** design + reference implementation. Yeh document **example product** ke tor par `MizaanbitsERP` use karta hai (`key = mizaan`, domain `mizaanbitserp.com`) aur ek **naya package** `khattakbits/sso-client` define karta hai.
+**Date:** 13 Nov 2026  
+**Repo:** `E:/LaraProjects/saas-starter` (branch `extract/package-skeleton`)  
+**Depends on:** `04-CONTROL-PLANE-DESIGN.md` (§1.3 catalog tables, §3.3 snapshot, §5.3 purchase flow, §6.1 manifest), `05-IDENTITY-HUB-SPEC.md` (§1.2 endpoints, §1.3 client registration, §1.4 redirect allowlist, §1.9 refresh tokens, §3.2 `resolve`, §3.4 renew-link, §3.5 `users/changes`, §4.1–4.3 webhooks, §5.2–5.3.1 disable propagation), `07-MULTI-TENANCY-DESIGN.md` (§2 table split, §3.1 route structure, §3.6 SSO flow, §3.6.1 membership source, §3.8 membership check, §5.2 `tenantUrl()`, §6.6 owner mapping, §9 entitlements)  
+**Scope:** design + reference implementation. Yeh document **example product** ke tor par `MizaanbitsERP` use karta hai (`key = mizaan`, domain `mizaanbitserp.com`) aur ek **naya package** `khattakbits/sso-client` define karta hai.  
 **Rule:** Har code block ka file path diya gaya hai. Jo cheez repo mein **maujood nahi** woh **`NEW`** mark hai. Jo cheez verify nahi ho saki woh **`NOT VERIFIED`** mark hai.
 
 ---
 
 ## 0. Yeh document kya hai (aur kya nahi)
 
-| Cheez | Status | Kahan |
-|---|---|---|
-| `khattakbits/core` (audit, mailer, documents, RBAC, settings, modules) | ✅ **Maujood** — `vendor/khattakbits/core` | `03` Part C |
-| `@khattakbits/ui` (layouts, ui, composables, login3d) | ✅ **Maujood** | `03` Part C |
-| `stancl/tenancy` | ❌ **Install nahi hua** — `composer.json` mein nahi hai | `07` §1 (resolve verified, install pending) |
-| `khattakbits/sso-client` | ❌ **NEW** — poora package | Yeh doc §2 |
-| `products` / `plans` / `plan_entitlements` / … (CP side) | ❌ **NEW** — `04` §1.3 ka data model, migrations nahi | `04` |
-| `GET /api/v1/users/tenants` | ❌ **NEW** — CP endpoint | `05` §3.1.1 |
-| `tenant.owner` in `resolve` / `subscription.created` | ❌ **NEW** — CP payload | `05` §3.2, §4.1 |
-| `users.kb_user_id`, `users.blocked_at`, `users.token_version`, `users.password` nullable | ❌ **NEW** — core package migration (`v1.5.0`) | `05` §5.1.1, `07` §2.1 |
+| Cheez                                                                                    | Status                                                 | Kahan                                       |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------- |
+| `khattakbits/core` (audit, mailer, documents, RBAC, settings, modules)                   | ✅ **Maujood** — `vendor/khattakbits/core`              | `03` Part C                                 |
+| `@khattakbits/ui` (layouts, ui, composables, login3d)                                    | ✅ **Maujood**                                          | `03` Part C                                 |
+| `stancl/tenancy`                                                                         | ❌ **Install nahi hua** — `composer.json` mein nahi hai | `07` §1 (resolve verified, install pending) |
+| `khattakbits/sso-client`                                                                 | ❌ **NEW** — poora package                              | Yeh doc §2                                  |
+| `products` / `plans` / `plan_entitlements` / … (CP side)                                 | ❌ **NEW** — `04` §1.3 ka data model, migrations nahi   | `04`                                        |
+| `GET /api/v1/users/tenants`                                                              | ❌ **NEW** — CP endpoint                                | `05` §3.1.1                                 |
+| `tenant.owner` in `resolve` / `subscription.created`                                     | ❌ **NEW** — CP payload                                 | `05` §3.2, §4.1                             |
+| `users.kb_user_id`, `users.blocked_at`, `users.token_version`, `users.password` nullable | ❌ **NEW** — asli ghar `core` (`v1.5.0`); `sso-client` mein transitional shim | `05` §5.1.1, `07` §2.1, §6.3 |
+| `GET /api/v1/plans`                                                                      | ❌ **NEW** — CP endpoint, contract `§6.1` mein likha hai | `05` §1.2 (add karna hai) |
 
 **Yeh doc do cheezein nahi karta:** (a) CP ka implementation (woh `04`/`05` ka kaam hai), (b) product ka poora ERP (sirf integration surface). Jo code hai woh **copy-paste-able reference** hai — magar `NOT VERIFIED` wale hisse (jaise CP ka exact JSON) CP ship hone par confirm karne honge.
 
@@ -98,7 +99,7 @@ foreach ($modules as $m) {
 
 ### 1.3 Step 3 — features
 
-`product_features.type` **authoritative** hai (04 §1.3): `flag | limit | quota`. `plan_entitlements.type` sirf fallback hai jab feature row na ho.
+`product_features.type` **authoritative** hai (04 §1.3) — teen values: `flag`, `limit`, `quota`. `plan_entitlements.type` sirf fallback hai jab feature row na ho.
 
 ```php
 // database/seeders/KhattakBits/MizaanProductSeeder.php  (NEW)
@@ -156,6 +157,7 @@ foreach ($features as $key => [$moduleKey, $name, $type, $default, $unit, $reset
 ### 1.4 Step 4 — doctypes
 
 `product_doctypes` `DocumentRegistry` ka **mirror** hai (04 §1.3, `02` §2.1). CP usay **load nahi karta** — `model` column sirf documentation hai. Yeh catalog admin ko dikhata hai ke product kya-kya documents banata hai, aur `permission_prefix` se pata chalta hai kaunsi permission usay control karti hai.
+
 
 ```php
 // database/seeders/KhattakBits/MizaanProductSeeder.php  (NEW)
@@ -367,6 +369,7 @@ foreach ($plans as $data) {
 
 **`seat_limit` aur `seats` entitlement dono kyun:** `seat_limit` **billing** ka column hai (kitni seats kharidi gayin), `seats` entitlement **enforcement** ka (kitni allowed hain). Phase 1 mein dono barabar hain (04 D1: seats customer-bought, koi metering nahi). Phase 2 mein per-seat billing aayegi to `seat_limit` purchased hoga aur `seats` entitlement us se derive hoga — **do column rakhna ab sasta hai, baad mein add karna mehnga**.
 
+
 ### 1.7 Step 7 — OAuth client
 
 `05` §1.3 ke mutabiq product create ke **usi transaction** mein. Yahan seeder version:
@@ -430,7 +433,10 @@ $endpoint = $product->webhookEndpoints()->updateOrCreate(
             'invoice.voided',
             'payment.verified',
             'payment.rejected',
-            'tenant.provisioned',
+            // `tenant.provisioned` JAAN BOOJH KAR nahi hai — §6.2 dekhein.
+            // Woh event retired ho gaya: CP ko product se provisioning
+            // acknowledgement ki zaroorat nahi, aur product ke paas
+            // emit karne ko kuch nahi.
         ],
         'is_active'     => true,
         'api_version'   => '1',
@@ -558,7 +564,6 @@ khattakbits-sso-client/                                 (NEW — alag repo)
 │       └── Handlers/
 │           ├── PlanChanged.php
 │           ├── SubscriptionChangedHandler.php
-│           ├── TenantProvisioned.php
 │           └── UserDisabled.php
 └── tests/
     ├── Feature/
@@ -623,6 +628,7 @@ khattakbits-sso-client/                                 (NEW — alag repo)
 ```
 
 **`khattakbits/core: ^2.0` kyun, `^1.4` nahi:** sso-client `menu.php` ke `path` key par aur core routes ke `{tenant}` split par depend karta hai — dono **v2.0.0** mein aaye (`03` Part D, `07` §5.3). `^1.4` allow karna matlab hai ke package install ho jayega magar `path` key silently ignore hogi aur menu ke routes 404 denge.
+
 
 **`stancl/tenancy` yahan `require` mein hai, `suggest` mein nahi.** Yeh jaan boojh kar hai: sso-client ka poora membership model path-based tenancy par khara hai (`tenant()`, `tenancy()->initialize()`). Optional rakhna matlab hai ke runtime par `class_exists` checks har jagah — jo `07` §7.3 ne core ke liye kiya tha, magar yahan ulta logic hai: **core ko nahi pata hona chahiye**, sso-client ko **pata hona chahiye**.
 
@@ -874,6 +880,7 @@ return [
 ];
 ```
 
+
 ### 2.6 Migrations (5 naye)
 
 **Note:** `users.kb_user_id`, `blocked_at`, `blocked_reason`, `token_version` **core package** (`v1.5.0`) mein aate hain (05 §5.1.1). Neeche sirf woh columns hain jo sso-client **khud** maangta hai — aur ek `password` nullable fix jo SSO-only users ke liye lazmi hai.
@@ -908,6 +915,13 @@ return new class extends Migration
         // SSO-only user ka local password hota hi nahi (D5). Column NOT NULL hai
         // (0001_01_01_000000_create_users_table.php), is liye nullable karna lazmi.
         // Laravel 11+ native change() — doctrine/dbal ki zaroorat nahi.
+        //
+        // ⚠️ TRANSITIONAL SHIM. Is column ka asli ghar `khattakbits/core`
+        // v1.5.0 hai (§6.3) — yahan sirf is liye hai ke aaj product chal
+        // sake. `change()` idempotent hai (nullable par dobara nullable =
+        // no-op), is liye core ship hone par takraav nahi hoga; magar yeh
+        // block us waqt hata dena chahiye, warna ek hi faisla do jagah
+        // rahega aur ek din diverge karega.
         Schema::table('users', function (Blueprint $table) {
             $table->string('password')->nullable()->change();
         });
@@ -924,6 +938,8 @@ return new class extends Migration
 ```
 
 **`password` nullable kyun lazmi hai:** `users.password` aaj `string` **NOT NULL** hai. SSO-only user ke paas password nahi hota. Agar nullable na karein to `MirrorUser` ko random hash daalna padega — jo kaam karta hai magar "yeh user password se login kar sakta hai?" ka jawab dhundhla kar deta hai, aur ek din koi `Hash::check('', $hash)` wala bug aa jayega. **`null` = "password set nahi hua" ek saaf signal hai.**
+
+**Faisla: is column ka ghar `khattakbits/core` hai, `sso-client` nahi** (`§6.3`). Wajah: `users` table **core** ki hai (D1), aur `password` nullable karna SSO ka feature nahi — multi-auth ka structural faisla hai. Har product apni copy likhe to N products, N migrations, aur `down()` mein ek doosre ko tootte hain. Yahan jo block hai woh **transitional shim** hai: aaj kaam karne ke liye, core v1.5.0 aane par delete. `change()` idempotent hai is liye dono saath bhi chal sakte hain — magar ek waqt par ek hi jagah hona chahiye.
 
 ```php
 // khattakbits-sso-client/database/migrations/2026_11_20_000002_create_kb_user_tenant_table.php  (NEW)
@@ -1011,7 +1027,7 @@ return new class extends Migration
             $table->string('code_verifier', 128);        // PKCE S256 verifier
             $table->string('return_to', 500)->nullable();// SIRF destination hint — membership nahi
             $table->string('tenant_hint', 60)->nullable();// URL se aaya slug, sirf UI ke liye
-            $table->string('session_id', 100)->nullable();// login interrupt ke liye (05 §2.3)
+            $table->string('session_id', 100)->nullable();// login CSRF binding — §2.8.3; null = reject
             $table->string('ip', 45)->nullable();
             $table->timestamp('expires_at');
             $table->timestamp('consumed_at')->nullable();
@@ -1142,6 +1158,7 @@ final class WebhookEvent extends Model
 
 ---
 
+
 ### 2.8 `KhattakBitsProvider` — OAuth2 + PKCE
 
 #### 2.8.1 `Pkce`
@@ -1191,6 +1208,10 @@ final readonly class KbSession
     /**
      * @param  array<int, array{tenant_id:string, slug:string, product_key:string, role:string, status:string}>  $tenants
      * @param  array<string, mixed>  $claims
+     * @param  string|null  $returnTo  RAW value from `kb_oauth_state.return_to`.
+     *                                 SIRF state row se — callback query string se
+     *                                 KABHI nahi (`§2.8.6`). Consumer ko
+     *                                 `safeReturnTo()` se guzarna LAZMI hai.
      */
     public function __construct(
         public User $user,
@@ -1199,6 +1220,7 @@ final readonly class KbSession
         public string $refreshToken,
         public \DateTimeImmutable $expiresAt,
         public int $tokenVersion,
+        public ?string $returnTo,
         public array $claims,
     ) {}
 
@@ -1231,6 +1253,7 @@ final readonly class KbSession
 // khattakbits-sso-client/src/OAuth/StateStore.php  (NEW)
 namespace KhattakBits\SsoClient\OAuth;
 
+use Illuminate\Support\Facades\Log;
 use KhattakBits\SsoClient\Models\KbOauthState;
 
 final class StateStore
@@ -1242,6 +1265,9 @@ final class StateStore
             'code_verifier' => $verifier,
             'return_to'     => $returnTo ? mb_substr($returnTo, 0, 500) : null,
             'tenant_hint'   => $tenantHint ? mb_substr($tenantHint, 0, 60) : null,
+            // Login CSRF binding. Yahan `session()->getId()` regenerate se
+            // PEHLE ka id hai — `CallbackController` regenerate baad mein
+            // karta hai. Yeh order load-bearing hai (`§2.8.6`).
             'session_id'    => session()->getId(),
             'ip'            => request()->ip(),
             'expires_at'    => now()->addSeconds((int) config('kb.oauth.state_ttl', 600)),
@@ -1249,10 +1275,21 @@ final class StateStore
     }
 
     /**
-     * Single use. Consume atomically taake do parallel callbacks dono consume na karein.
+     * Single use + session-bound.
+     *
+     * Do cheezein check hoti hain, aur dono fail-closed hain:
+     *   1. row zinda hai (`expires_at`, `consumed_at`) — replay se bachao
+     *   2. row ISI session ki hai — login CSRF se bachao
+     *
+     * Dono fail par `null` — caller ko farq nahi pata chalta ke kaunsi
+     * wajah thi (state enumeration se bachao).
      */
     public function pull(string $state): ?KbOauthState
     {
+        if ($state === '') {
+            return null;
+        }
+
         $row = KbOauthState::query()
             ->where('state', $state)
             ->whereNull('consumed_at')
@@ -1263,13 +1300,43 @@ final class StateStore
             return null;
         }
 
+        // Pehle atomically claim karo — parallel callbacks mein sirf ek jeetega.
         $affected = KbOauthState::query()
             ->whereKey($row->id)
             ->whereNull('consumed_at')
             ->update(['consumed_at' => now()]);
 
         // 0 = koi doosra callback pehle consume kar chuka — replay attempt
-        return $affected === 1 ? $row : null;
+        if ($affected !== 1) {
+            return null;
+        }
+
+        // ── Login CSRF guard (OAuth 2.0 Security BCP §4.7) ─────────────
+        // `state` akela CSRF se nahi bachata. Attack: attacker apna login
+        // shuru karta hai, callback URL (`code` + `state`) capture karta
+        // hai, aur victim ko bhej deta hai. Victim ka browser callback
+        // kholta hai — aur victim **attacker ke account** mein login ho
+        // jata hai. Uske baad victim jo bhi likhta hai, attacker padh
+        // leta hai.
+        //
+        // Ilaaj: state ko usi browser se bandho jahan woh bani thi.
+        // `session()->getId()` yahan regenerate se PEHLE padha ja raha hai.
+        //
+        // `hash_equals` — timing-safe. `session_id` null ho (purani row)
+        // to `(string) null === ''` → mismatch → reject. Fail-closed.
+        if (! hash_equals((string) $row->session_id, (string) session()->getId())) {
+            Log::channel('kb')->warning('kb.sso.state_session_mismatch', [
+                'state_id' => $row->id,
+                'ip'       => request()->ip(),
+            ]);
+
+            // Row already consumed hai — dobara try nahi ho sakti. Yeh jaan
+            // boojh kar hai: mismatch ka matlab ya replay hai ya session kho
+            // gaya; dono mein state dobara istemal nahi honi chahiye.
+            return null;
+        }
+
+        return $row;
     }
 
     public function gc(): int
@@ -1282,6 +1349,19 @@ final class StateStore
 ```
 
 **`pull()` mein do-step kyun, ek `update ... returning` kyun nahi:** MySQL mein `UPDATE ... RETURNING` nahi hai (MariaDB mein hai). Read-then-atomic-`UPDATE ... WHERE consumed_at IS NULL` portable hai aur `affected === 1` race-free hai. Yeh `02` §5.4.1 ke retired handoff consume ka wohi pattern hai (rule 1: `UPDATE ... WHERE consumed_at IS NULL` → `affectedRows === 1`) — woh pattern bura nahi tha, uska **maqsad** bura tha.
+
+**`session_id` binding — login CSRF.** `state` sirf replay se bachata hai, **login CSRF se nahi**. Farq yeh hai:
+
+| Attack | `state` akela | `state` + `session_id` |
+|---|---|---|
+| Attacker apna state dobara use kare | ❌ blocked (`consumed_at`) | ❌ blocked |
+| Attacker apna **fresh** state + apna `code` victim ko bheje | ✅ **chalti hai** — victim attacker ke account mein login | ❌ blocked (`session_id` mismatch) |
+
+Doosri row hi asli masla hai, aur woh `state` ke design mein nahi hai — `state` ka kaam "yeh callback usi request ka jawab hai" prove karna hai, "yeh browser wohi hai" nahi. Woh doosri cheez **session cookie** prove karti hai, is liye `pull()` dono ko jodta hai.
+
+**`session_id` nullable kyun hai magar null accept nahi hota:** column nullable hai kyunke `put()` ke waqt `session()` kisi ajeeb context mein na ho (CLI se test, etc.) — magar `pull()` mein `null` ka matlab **mismatch** hai, fail-open nahi. `(string) null === ''` aur `hash_equals('', <40-char-id>)` false deta hai. Purani rows (agar koi migration ke darmiyan bachi hon) khud reject ho jayengi — jo sahi hai.
+
+**`consumed_at` mismatch par bhi set hota hai.** Yeh jaan boojh kar: mismatch ka matlab ya replay hai ya session kho gaya. Dono soorat mein state dobara istemal nahi honi chahiye — warna attacker same state par brute-force kar sakta hai (mukammal nahi, magar muft nahi dena chahiye).
 
 #### 2.8.4 `KhattakBitsProvider`
 
@@ -1416,6 +1496,12 @@ final class KhattakBitsProvider
             refreshToken: (string) ($token['refresh_token'] ?? ''),
             expiresAt:    $expiresAt,
             tokenVersion: (int) ($claims['kb_token_version'] ?? 0),
+            // `return_to` STATE ROW se — callback query string se NAHI.
+            // Woh user ne login SHURU karte waqt maanga tha, aur `pull()`
+            // ne usay isi session se bind kiya hai (`§2.8.3`). Query string
+            // par `?return_to=` chipkana attacker ka rasta hai; `§2.8.6`
+            // usay padhta hi nahi.
+            returnTo:     $stored->return_to,
             claims:       $claims,
         );
     }
@@ -1606,9 +1692,18 @@ final class CallbackController
         }
 
         // ── Session fixation se bachao ──────────────────────────────────
-        // Login ke waqt session id badalna lazmi hai. `regenerate()` purana
-        // id destroy kar deta hai — is liye state row (jo purana session_id
-        // rakhti thi) ab kaam ki nahi, magar woh already consumed hai.
+        // `regenerate()` purana id destroy karta hai. Yeh state row ke liye
+        // koi masla nahi — uski `session_id` **pehle hi** verify ho chuki
+        // hai, `$provider->callback()` ke andar (`StateStore::pull()`,
+        // §2.8.3). Yani purana id bekaar nahi hua — usne login CSRF ka
+        // guard ka kaam kar diya, aur ab fixation guard chalta hai.
+        //
+        // ORDER MAT HILAYEIN. Agar `regenerate()` ko `callback()` se pehle
+        // le jayein, to `pull()` naya id dekhega, purani row se match nahi
+        // karega, aur **har login** `state_session_mismatch` de kar fail
+        // ho jayega. Yeh do guards hain jo ulte order mein chalte hain:
+        // pehle "yeh wohi browser hai?" (purana id), phir "naya id do"
+        // (fixation).
         $request->session()->regenerate();
 
         Auth::login($session->user, remember: false);
@@ -1622,12 +1717,31 @@ final class CallbackController
             'kb.authenticated_at'  => now()->timestamp,
         ]);
 
-        $returnTo = $provider->safeReturnTo($request->query('return_to'));
+        // ── return_to SIRF state row se ─────────────────────────────────
+        // `$request->query('return_to')` jaan boojh kar padha NAHI ja raha.
+        // Callback URL attacker ke haath mein hai; `return_to` ka asli
+        // maqsad woh hai jo user ne login SHURU karte waqt maanga tha —
+        // woh `kb_oauth_state.return_to` mein frozen hai.
+        //
+        // `safeReturnTo()` yahan dobara chalta hai (defence in depth) —
+        // `destination()` bhi andar validate karta hai. Idempotent hai.
+        $returnTo = $provider->safeReturnTo($session->returnTo);
 
         return redirect()->to($provider->destination($session, $returnTo));
     }
 }
 ```
+
+**Do guards, ulte order mein — yeh `CallbackController` ka sab se nazuk hissa hai:**
+
+| # | Guard | Kya prove karta hai | Kahan | Session id |
+|---|---|---|---|---|
+| 1 | `StateStore::pull()` ka `session_id` compare | "yeh callback **usi browser** ka jawab hai" — login CSRF | `callback()` ke andar | **purana** (regenerate se pehle) |
+| 2 | `session()->regenerate()` | "attacker ne fixated id nahi di" — session fixation | controller mein, `callback()` ke baad | **naya** |
+
+Agar in dono ko swap kar dein to guard 1 hamesha fail hoga — kyunke state row purane id se bandhi hai. Yeh woh bug hai jo **local mein pakarna mushkil aur production mein total** hai: har login `302 /login` par wapas chala jayega, aur log mein `kb.sso.state_session_mismatch` bhara hoga. `§4.2` mein iska row hai.
+
+**`$stored->return_to` DTO mein kyun, seedha controller mein kyun nahi:** kyunke `$stored` sirf `callback()` ke andar zinda hai. Agar controller `$request->query('return_to')` padhe to woh **doosra** input hai — attacker ka. DTO mein daalne ka matlab hai: destination ka poora faisla ek hi jagah, ek hi input se.
 
 ```php
 // khattakbits-sso-client/routes/web.php  (NEW)
@@ -1647,6 +1761,10 @@ use KhattakBits\SsoClient\Http\Controllers\WebhookController;
 
 Route::middleware('web')->group(function () {
     Route::get('/auth/kb/callback', CallbackController::class)->name('kb.callback');
+
+    // `return_to` YAHAN padhna sahi hai — yeh woh jagah hai jahan user ka
+    // maqsad state row mein FREEZE hota hai. Callback par isay padhna
+    // galat hai (`§2.8.6`). Do jagah, do alag inputs — inhein confuse na karein.
     Route::get('/auth/kb/start', fn () => app(\KhattakBits\SsoClient\OAuth\KhattakBitsProvider::class)
         ->redirect(request(), (string) request()->query('return_to', '/'), request()->query('tenant')))
         ->name('kb.start');
@@ -1684,6 +1802,7 @@ public function show(Request $request)
         ->redirect($request, (string) $request->query('return_to', '/'), $request->query('tenant'));
 }
 ```
+
 
 ### 2.9 Mirror user sync + tenant owner mapping
 
@@ -1885,9 +2004,13 @@ final class ReconcileMemberships
 
 **`$seen` khali hone ka edge case:** agar `$remote` khali array hai to `when()` skip ho jata hai aur **saare** rows revoke ho jate hain. Yeh sahi hai **sirf tab** jab CP ne `200 {"tenants":[]}` diya ho — yani "is user ka koi tenant nahi". Agar CP `5xx` de to hum yahan pahunche hi nahi (exception upar chali gayi). `07` §3.8 ka fail-closed rule: CP down ho to **kuch naya na banao**, purana bhi na todo. Is liye `KbApiClient::tenants()` **`5xx` par throw karta hai**, khali array return nahi karta — dekhein §2.10.
 
+**Ek hole jo `5xx` check cover nahi karta:** agar CP `200` de magar body mein `tenants` key **na ho**, to `?? []` khali array deta hai — aur `$seen` khali hone wala rasta chal padta hai, yani **poora access revoke**. "CP down" aur "CP ne khali list di" ke darmiyan teesri soorat bhi hai: "CP ne kuch aisa diya jo samajh nahi aaya". `§2.10` mein `tenants()` is par **throw** karta hai, `[]` nahi deta. Do soorat, ek behaviour: **kuch na todo.**
+
+**Yeh check `role_hint` par nahi hai.** `ReconcileMemberships` `$t['role']` ko `role_hint` mein likhta hai — magar `role_hint` **sirf UI hint** hai, koi permission nahi (`05` §3.1.1). Permission `model_has_roles` se aati hai jo tenant DB mein hai, aur woh `TenantOwnerMapper`/provisioning set karta hai. Yani CP `role` mein kuch bhi bheje, woh **koi haq nahi deta** — sirf label badalta hai.
+
 #### 2.9.3 `TenantOwnerMapper`
 
-`07` §6.6.3 ka poora code yahan package mein hai. Yeh **provisioning** ke waqt chalta hai (`tenant.provisioned` webhook ya `tenants:provision` command se), SSO ke waqt nahi.
+`07` §6.6.3 ka poora code yahan package mein hai. Yeh **provisioning** ke waqt chalta hai (`tenants:provision` command se), SSO ke waqt nahi. `tenant.provisioned` webhook se **nahi** — woh event retired hai (`§2.14.6`).
 
 ```php
 // khattakbits-sso-client/src/Identity/TenantOwnerMapper.php  (NEW)
@@ -2003,7 +2126,10 @@ final class TenantOwnerMapper
 
 **`Role::findOrCreate` `firstOrCreate` ki jagah:** `findOrCreate` permission guard (`web`) set karta hai. `firstOrCreate` par guard default ho sakta hai aur phir `syncRoles` `RoleDoesNotExist` de sakta hai.
 
+**`'owner'` hardcoded hai — `$owner` array se role **nahi** aata.** Yeh authorization ka point hai, style ka nahi: `$owner` CP se aata hai (`resolveOwner()`), aur agar hum usme `role` field dhoondte to CP ka ek compromised/`buggy` jawab product mein `owner` ke bajaye kuch aur — ya ulta, kisi aur ko `owner` — bana sakta hai. Owner mapping ka **poora maqsad** hai "is tenant ka owner woh user hai"; us faisle ko input se aane dena usay bekaar kar dena hai. Role **derive** hota hai (yeh function owner map kar raha hai, is liye role owner hai), **read** nahi hota.
+
 ---
+
 
 ### 2.10 `KbApiClient`
 
@@ -2109,7 +2235,54 @@ final class KbApiClient
         // 05 §3.1.1. `404` nahi aata. Magar `5xx` par hum yahan pahunche hi
         // nahi: `get()` throw karta hai, is liye CP down hone par purani
         // memberships revoke NAHI hoti (fail-closed, 07 §3.8).
-        return (array) ($body['tenants'] ?? []);
+        //
+        // ── Shape strict kyun hai ───────────────────────────────────────
+        // `?? []` khatarnak hai. Agar CP `200` de magar `tenants` key
+        // gayab ho (bug, schema change, proxy ne body kaat di), to hum
+        // khali array return kar dete — aur `ReconcileMemberships` `$seen`
+        // khali dekh kar **har membership revoke** kar deta (§2.9.2).
+        //
+        // "Khali list" aur "jawab mein list hi nahi" do alag cheezein hain;
+        // sirf pehli valid hai. Doosri par throw — taake CP down aur CP
+        // bug ka behaviour ek jaisa ho (kuch na todo).
+        if (! array_key_exists('tenants', $body) || ! is_array($body['tenants'])) {
+            throw KbApiException::fromResponse(
+                200,
+                'malformed_tenants_response',
+                'users/tenants response is missing the `tenants` array.',
+            );
+        }
+
+        return $body['tenants'];
+    }
+
+    /**
+     * `GET /api/v1/plans` — contract `§6.1` mein (05 §1.2 mein add karna hai).
+     *
+     * `tenants()` ke barkhilaf yeh 5xx par **throw nahi** karta — `null`
+     * deta hai. Wajah: plan list ka na milna kisi authorization faisle ko
+     * nahi badalta (renew current plan par chalta rehta hai), is liye UI
+     * degrade hona chahiye, request fail nahi.
+     *
+     * @return array{schema:int, data:array<int, array<string, mixed>>, etag?:string}|null
+     */
+    public function plans(?string $productKey = null, bool $includeHidden = false): ?array
+    {
+        try {
+            return $this->get('/api/v1/plans', array_filter([
+                'product_key'    => $productKey,
+                'include_hidden' => $includeHidden ? 'true' : null,
+            ]), $this->clientToken());   // client_credentials — user token nahi chahiye
+        } catch (KbApiException $e) {
+            // 404 = product unknown (config ghalat) — woh bhi `null`, kyunke
+            // renew block karna galat hoga. Caller `[]` dikha dega.
+            Log::channel('kb')->warning('kb.api.plans_unavailable', [
+                'status' => $e->status,
+                'code'   => $e->code,
+            ]);
+
+            return null;
+        }
     }
 
     /** @return array<string, mixed> */
@@ -2132,6 +2305,7 @@ final class KbApiClient
     public function resolve(string $tenantId, ?string $etag = null): ?array
     {
         $response = $this->request()
+            ->withToken($this->clientToken())   // §2.10 note — request() khud auth nahi lagata
             ->withHeaders($etag !== null ? ['If-None-Match' => $etag] : [])
             ->get($this->cpUrl.'/api/v1/subscriptions/resolve', ['tenant_id' => $tenantId]);
 
@@ -2269,6 +2443,11 @@ final class KbApiClient
 **`tenants()` `5xx` par throw karta hai, khali array nahi deta.** Yeh `07` §3.8 ka fail-closed rule hai: CP down hai to **kuch naya na banao**. Agar hum `5xx` par `[]` return karte, to `ReconcileMemberships` **saari** memberships revoke kar deta — yani ek CP outage sab users ko sab tenants se bahar kar deta. Woh bug production mein pakarna mushkil hai kyunke "sab kuch chal raha hai, bas user ke paas koi tenant nahi".
 
 **`retry` sirf `ConnectionException` par.** `5xx` par retry nahi karte — CP ne jawab diya hai, woh jawab authoritative hai. `5xx` par retry karna `resolve` ke request path mein latency 3× kar deta hai, aur `resolve` already negatively cached hai (§2.11.4).
+
+**`request()` khud koi auth header nahi lagata — har caller ko `withToken()`/`clientToken()` lagana lazmi hai.** Yeh design mein deliberately alag hai (per-call token: user token vs client credentials), magar iska natija yeh hai ke **bhoolna aasan hai**. `resolve()` mein yeh bhool thi (`request()->get(...)` bina token) — ab `withToken($this->clientToken())` add kiya hai. Naya endpoint add karte waqt check karein: `form()` (`/oauth/token`) token ke baghair chalta hai, baaki **har** call ko token chahiye.
+
+**`decode()` `error.code` ko `string` check karta hai, `is_string($code) ? $code : null`** — kyunke `05` §2.2 kabhi `{"error": {"code": "..."}}` bhejta hai aur kabhi `{"error": "invalid_grant"}` string. Bina check ke array `$code` `KbApiException::__construct(?string)` par `TypeError` deta.
+
 
 ### 2.11 `ResolvesSubscription` — cache, grace, 72h offline, fail-closed
 
@@ -2780,7 +2959,12 @@ final class SubscriptionGuard
 
 **`suspended` par `403` (aur `404` nahi):** `07` §3.8 ne `404` kaha — magar woh **membership** check ke liye tha, jahan attacker ko tenant ka wajood nahi pata hona chahiye. Yahan user **authenticated member** hai aur usay pata hai ke tenant exist karta hai; usay `404` dena sirf confusing hai. `403` + clear message sahi hai. `07` §10.4 ka `suspended` = `blocked` isi se match karta hai.
 
+**`tenant() === null` wala bypass ek dependency hai, feature nahi.** Guard central routes (callback, webhook, billing) ko chhodta hai — kyunke un par tenancy initialized hi nahi hoti. Yeh **sirf tab** mehfooz hai jab `/{slug}/...` routes par `EnsureTenantMembership` (`07` §3.8) lazmi laga ho. Agar koi tenant route guard ke baghair register ho jaye, to `SubscriptionGuard` usay bhi chhod dega (kyunke `tenant()` `null` hoga) — yani **suspended tenant ka route chalta rahega**. Is liye tenant routes par dono middlewares **saath** lagayein, aur `AppServiceProvider` mein ek assertion rakhein ke `{tenant}` wale koi route `kb.guard` ke baghair register na ho.
+
+**`read_only` mein `GET` allowed hai — magar `GET` par mutation mat karein.** Guard method dekhta hai, intent nahi. `GET /invoices/{id}/send-email`, `GET /reports/export`, ya koi bhi "link se action" route read-only grace mein **chal jayega**. Yeh guard ka bug nahi — route design ka. Rule: **state badalne wala kuch bhi `POST`/`PUT`/`PATCH`/`DELETE` ho.** Agar aisa `GET` route pehle se hai, usay grace mein `402` chahiye to `$allowedWhenLocked` ki tarah ek explicit denylist nahi — route ko `POST` mein badalna asli fix hai.
+
 **`GET` allowed par `POST` blocked — `isReadOnly` method-list se, route-name se nahi.** Route names badalte rehte hain; HTTP method semantics stable hain.
+
 
 ### 2.13 Entitlements — `Entitlement::has()`, `::limit()`, Blade/Vue, `entitled:` middleware
 
@@ -3098,6 +3282,7 @@ const canAddUser = allows('seats', 12)
 
 ---
 
+
 ### 2.14 `WebhookController` — HMAC + timestamp + idempotency + handlers
 
 #### 2.14.1 Signature verification
@@ -3153,6 +3338,24 @@ final class WebhookController
 
         if (! is_array($payload)) {
             return $this->reject('invalid_json', 400);
+        }
+
+        // ── Envelope vs header cross-check (05 §4.2) ────────────────────
+        // Signature sirf `{timestamp}.{raw_body}` cover karti hai — headers
+        // NAHI. Yani jo body replay kar sake woh `X-KB-Event` badal kar
+        // doosra handler chala sakta hai (`invoice.paid` ki signed body +
+        // `X-KB-Event: user.disabled`), aur `X-KB-Event-Id` badal kar
+        // idempotency bhi bypass kar sakta hai. Yeh "signed but misrouted"
+        // class ka bug hai.
+        //
+        // Envelope mein dono maujood hain aur dono SIGNED hain — `id` aur
+        // `type`. Header ko body se match karna lazmi hai. Body authoritative.
+        if (! hash_equals((string) ($payload['id'] ?? ''), $eventId)) {
+            return $this->reject('event_id_mismatch', 400);
+        }
+
+        if (! hash_equals((string) ($payload['type'] ?? ''), $event)) {
+            return $this->reject('event_type_mismatch', 400);
         }
 
         // ── Idempotency (05 §4.3 layer 2) ───────────────────────────────
@@ -3274,6 +3477,17 @@ final class WebhookController
 
 **`hash_equals` par ek line:** `hash_equals` length pehle compare karta hai aur phir constant-time. `===` par PHP pehla different byte par ruk jata hai — attacker byte-by-byte signature guess kar sakta hai (timing attack). Yeh theoretical lagta hai magar cost zero hai.
 
+**Header ↔ envelope cross-check kyun lazmi hai (aur yeh `05` §4.3 mein nahi likha):** signature **body** ko bind karti hai, magar handler ka faisla **header** se hota hai. Do header, do attacks:
+
+| Header | Bina cross-check ke attack | Cross-check ke baad |
+|---|---|---|
+| `X-KB-Event` | Attacker ek signed `invoice.paid` body replay karta hai magar header `user.disabled` bhejta hai → `UserDisabled` chalta hai, `invoice.paid` ka asar nahi hota | `400 event_type_mismatch` |
+| `X-KB-Event-Id` | Attacker wohi body naye id ke saath bhejta hai → idempotency row nayi banti hai → wohi event dobara apply hota hai (e.g. `subscription.renewed` do dafa) | `400 event_id_mismatch` |
+
+Envelope (`05` §4.2) mein `id` aur `type` dono hain — is liye cross-check **free** hai, koi naya contract nahi chahiye. Body authoritative hai; header sirf convenience hai (aur idempotency lookup ke liye, jo cross-check ke baad trustworthy hai).
+
+**`400` kyun, `401` nahi:** signature **valid** thi — caller authenticated hai. Masla payload ki consistency ka hai, is liye `400`. `401` dene se product ka retry-storm shuru ho jata aur asli wajah (`header` vs `body` mismatch) log mein `signature_mismatch` jaisi lagti.
+
 **Body se JSON parse `insertOrIgnore` ke baad:** hum `$raw` store karte hain, decoded array nahi — taake audit mein exact bytes hon jo sign hue thay.
 
 #### 2.14.2 `HandlesKbEvent` dispatcher
@@ -3286,7 +3500,6 @@ use KhattakBits\SsoClient\Subscriptions\ResolvesSubscription;
 use KhattakBits\SsoClient\Support\Entitlement;
 use KhattakBits\SsoClient\Webhooks\Handlers\PlanChanged;
 use KhattakBits\SsoClient\Webhooks\Handlers\SubscriptionChangedHandler;
-use KhattakBits\SsoClient\Webhooks\Handlers\TenantProvisioned;
 use KhattakBits\SsoClient\Webhooks\Handlers\UserDisabled;
 
 final class HandlesKbEvent
@@ -3295,7 +3508,6 @@ final class HandlesKbEvent
         private readonly SubscriptionChangedHandler $subscriptions,
         private readonly PlanChanged $plans,
         private readonly UserDisabled $users,
-        private readonly TenantProvisioned $tenants,
         private readonly ResolvesSubscription $resolver,
     ) {}
 
@@ -3312,7 +3524,6 @@ final class HandlesKbEvent
             $event === 'plan.changed'                => $this->plans->handle($data),
             $event === 'user.disabled',
             $event === 'user.enabled'                => $this->users->handle($event, $data),
-            $event === 'tenant.provisioned'          => $this->tenants->handle($data),
             default                                  => $this->ignore($event, $data),
         };
 
@@ -3462,6 +3673,8 @@ final class SubscriptionChangedHandler
 
 **`version` par stale reject kyun:** `05` §4.4 saaf kehta hai ordering guaranteed nahi hai — `subscription.grace` `subscription.expired` se pehle aa sakta hai. Bina version check ke product ka final state **aakhri aaye hue** payload par depend karega, jo random hai. `version` monotonic hai (04 §3.3), is liye wohi tie-breaker hai.
 
+**`<` aur `<=` ka farq — jaan boojh kar `<`:** barabar version **accept** hota hai. `<=` karna tempting hai ("same version = duplicate, chhod do") magar galat: CP ka retry **wohi** version dobara bhej sakta hai (naya `event_id`, same `version`), aur usay drop karna matlab ek aisa event khona jo pehli dafa apply hi nahi hua tha. Barabar version accept karna idempotent hai — wohi data dobara likhna, koi side effect nahi. True duplicate `X-KB-Event-Id` se rukta hai (`§2.14.1`), `version` se nahi. **Do alag guards, do alag kaam:** `event_id` = "yeh delivery dobara hai", `version` = "yeh data purana hai".
+
 **`array_replace_recursive` `array_merge_recursive` ki jagah:** `array_merge_recursive` same key par **array** bana deta hai (`['a' => 1]` + `['a' => 2]` → `['a' => [1,2]`). `array_replace_recursive` overwrite karta hai, jo hum chahte hain.
 
 #### 2.14.4 `PlanChanged`
@@ -3571,52 +3784,30 @@ final class UserDisabled
 }
 ```
 
-#### 2.14.6 `TenantProvisioned`
+#### 2.14.6 `TenantProvisioned` — **RETIRED** (14 Nov 2026)
 
-```php
-// khattakbits-sso-client/src/Webhooks/Handlers/TenantProvisioned.php  (NEW)
-namespace KhattakBits\SsoClient\Webhooks\Handlers;
+> **Faisla: event retire.** `tenant.provisioned` na CP → product jata hai, na product → CP. Handler, event list ka entry, aur dispatcher ka branch — teenon hata diye gaye. Wajah neeche.
 
-use Illuminate\Support\Facades\Log;
-use KhattakBits\SsoClient\Identity\TenantOwnerMapper;
-use Stancl\Tenancy\Database\Models\Tenant;
+**Ambiguity kya thi.** `05` §4.1 `tenant.provisioned` ko `data.owner_user_id` ke saath list karta tha aur trigger likhta tha *"Product ne tenant DB bana kar `kb_tenant_id` diya"* — yani **product → CP** acknowledgement. Magar wohi table CP → product events bhi rakhti hai, aur `07` §6.6.1 owner mapping **`subscription.created`** se leta hai, `tenant.provisioned` se nahi. Do mutabadil direction, ek hi naam — aur koi bhi consumer nahi.
 
-final class TenantProvisioned
-{
-    public function __construct(private readonly TenantOwnerMapper $mapper) {}
+**Direction test — "agar yeh event na ho to kya tootega?"**
 
-    /**
-     * @param  array<string, mixed>  $data  { tenant_id, slug, product_url, owner_user_id }
-     */
-    public function handle(array $data): void
-    {
-        $tenantId = (string) ($data['tenant_id'] ?? '');
+| Direction | Kaun consume karta | Na hone par kya tootta hai | Verdict |
+|---|---|---|---|
+| product → CP (ack) | CP | **Kuch nahi.** CP tenant registry khud banata hai aur `subscription.created` ke waqt product ko `tenant_id` deta hai (`04` §3.2). CP ko "product ne DB bana liya" ka pata karne ki zaroorat hi nahi — woh product ke andar ki baat hai | ❌ zaroorat nahi |
+| CP → product | product | **Kuch nahi.** Owner mapping `subscription.created` par hoti hai (`07` §6.6.1). Tenant row product mein `tenants:provision` command se banti hai (`07` §6.6.2), CP ke event se nahi | ❌ zaroorat nahi |
 
-        $tenant = Tenant::query()->whereKey($tenantId)->first();
+Dono taraf koi consumer nahi tha. Event sirf **ambiguity paida karta tha** — aur ambiguity ke saath handler likhna matlab ek aisa code path maintain karna jo kabhi nahi chalta, magar jise koi bhi "fix" kar sakta hai aur kuch tor sakta hai.
 
-        if ($tenant === null) {
-            Log::channel('kb')->warning('kb.provisioning.tenant_missing', ['tenant_id' => $tenantId]);
+**Recovery ka asli rasta (jo `TenantProvisioned` faraham karta tha, woh ab yahan hai):**
 
-            return;
-        }
+| Failure | Recovery | Kahan |
+|---|---|---|
+| Provisioning ke dauraan `owner_mapping` step fail | `php artisan tenants:provision {id} --owner-id=…` — command idempotent hai, `map()` dobara chalana safe (`07` §6.6.4) | `07` §6.6.2 |
+| Owner CP par badal gaya | Agla `subscription.created` / `resolve` naya `tenant.owner` dega; `resolveOwner()` usay uthata hai | §2.9.3 |
+| Membership drift | Agla SSO callback — `ReconcileMemberships` har login par chalta hai | §2.9.2 |
 
-        // Owner mapping idempotent hai (07 §6.6.4) — dobara chalana safe.
-        // Yeh woh recovery path hai jab pehla `owner_mapping` step fail hua ho.
-        $owner = $this->mapper->resolveOwner($tenantId);
-
-        $this->mapper->map($tenant, $owner);
-
-        Log::channel('kb')->info('kb.provisioning.owner_mapped_via_webhook', [
-            'tenant_id' => $tenantId,
-            'kb_user_id'=> $owner['kb_user_id'],
-        ]);
-    }
-}
-```
-
-> **Direction ki ek ambiguity jo flag karni chahiye.** `05` §4.1 `tenant.provisioned` ko `data.owner_user_id` ke saath list karta hai aur uska trigger likhta hai *"Product ne tenant DB bana kar `kb_tenant_id` diya"* — yani yeh **product → CP** event hai (acknowledgement). Magar wohi table CP → product events bhi rakhti hai, aur `07` §6.6.1 owner mapping ko `subscription.created` se leta hai, `tenant.provisioned` se nahi.
->
-> Is doc mein handler **idempotent recovery** ke tor par likha gaya hai: agar CP yeh event product ko echo kare (registry row banne ke baad), to product owner mapping dobara chala kar drift theek kar leta hai. Agar CP isay product **se** leta hai to yeh inbound handler dormant rehta hai — nuksan nahi, kyunke `map()` idempotent hai (`07` §6.6.4). **CP ship hone par yeh direction confirm karni hai** — `NOT VERIFIED`.
+**`05` §4.1 se event hatana hai** — is turn mein `05` edit nahi kiya, is liye `§6.2` mein decision record hai. Jab tak `05` update na ho, `08` ka event list authoritative hai (`§1.8`).
 
 #### 2.14.7 `Events/SubscriptionChanged`
 
@@ -3640,6 +3831,7 @@ final class SubscriptionChanged
 ```
 
 Product isay sun kar apni cheezein kar sakta hai (welcome email, banner refresh, etc.).
+
 
 ### 2.15 Expired / Renew — Inertia page + renew-link flow
 
@@ -3684,6 +3876,7 @@ namespace KhattakBits\SsoClient\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -3819,17 +4012,47 @@ final class BillingController
         return \Stancl\Tenancy\Database\Models\Tenant::query()->where('slug', $slug)->first();
     }
 
-    /** @return array<int, array{key:string, name:string, amount_minor:int, currency:string, interval:string}> */
+    /** @return array<int, array{key:string, name:string, amount_minor:int, currency:string, interval:string, deprecated:bool}> */
     private function plansForUi(): array
     {
-        // Phase 1: plans CP se aate hain (`/api/v1/plans` — NEW, 05 §1.2 mein
-        // nahi hai). Tab tak renew-link ka `plan_key` null = current plan.
-        return [];
+        $cacheKey = 'kb.plans.'.config('kb.client_id');
+
+        // `Cache::remember` jaan boojh kar nahi — woh failure ko bhi 5 min
+        // cache kar deta, aur CP ka ek transient 500 poore 5 min tak
+        // upgrade UI ghayab rakhta.
+        if (is_array($cached = Cache::get($cacheKey))) {
+            return $cached;
+        }
+
+        $plans = $this->api->plans(productKey: (string) config('kb.product_key'));
+
+        // `null` = endpoint nahi mila / CP down / product unknown.
+        // Plans na milna renew ko NAHI rokta — `plan_key = null` par renew
+        // current plan par chalta hai. `tenants()` ke barkhilaf: woh
+        // membership ka faisla deta hai (fail-closed, §2.9.2), yeh sirf UI
+        // hai (degrade). Is liye cache bhi nahi karte — agla load dobara
+        // koshish karega.
+        if ($plans === null) {
+            return [];
+        }
+
+        $mapped = array_values(array_map(fn (array $p): array => [
+            'key'          => $p['key'],
+            'name'         => $p['name'],
+            'amount_minor' => (int) ($p['prices'][0]['amount_minor'] ?? 0),
+            'currency'     => (string) ($p['currency'] ?? config('kb.currency', 'PKR')),
+            'interval'     => (string) ($p['prices'][0]['interval'] ?? 'month'),
+            'deprecated'   => isset($p['deprecated_at']),
+        ], (array) ($plans['data'] ?? [])));
+
+        Cache::put($cacheKey, $mapped, 300);
+
+        return $mapped;
     }
 }
 ```
 
-**`plansForUi()` khali kyun hai — honest gap.** Renew page par upgrade options dikhane ke liye product ko plans ki list chahiye, aur `05` §1.2 mein aisa koi endpoint **nahi** hai. Phase 1 mein renew-link `plan_key` optional hai (current plan par renew). Upgrade/downgrade UI ke liye `GET /api/v1/plans?product_key=mizaan` **naya CP endpoint** chahiye — yeh `NOT VERIFIED` gap hai aur `05` §1.2 mein add hona chahiye. Filhal product current plan par renew karta hai, jo MVP ke liye kaafi hai.
+**`plansForUi()` ka contract `§6.1` mein hai** — `GET /api/v1/plans` `05` §1.2 mein **abhi nahi** hai, is liye `KbApiClient::plans()` bhi NEW hai. Endpoint ship hone tak yeh `[]` return karega (catch branch) aur renew current plan par chalega — MVP block nahi hota, sirf upgrade UI nahi dikhti.
 
 #### 2.15.3 Inertia pages
 
@@ -4355,10 +4578,10 @@ Har step ke saath **expected result** hai. Agar result match na kare to §4 dekh
 
 | # | Karne ka kaam | Expected |
 |---|---|---|
-| **1** | `http://mizaanbitserp.test:8001/acme/dashboard` kholen (koi session nahi) | `302 → /login?return_to=%2Facme%2Fdashboard` |
+| **1** | `http://mizaanbitserp.test:8001/acme/dashboard` kholen (koi session nahi) | `302 → /login?return_to=%2Facme%2Fdashboard`. **Yahan `return_to` `kb_oauth_state` mein freeze hota hai** (state row ke saath, usi session id par) — callback URL par nahi |
 | **2** | `/login` page | Turant `302 → http://khattakbits.test:8000/oauth/authorize?response_type=code&client_id=…&code_challenge=…&code_challenge_method=S256&state=…` |
-| **3** | CP par login (admin user jo product ka access rakhta hai) | `302 → http://mizaanbitserp.test:8001/auth/kb/callback?code=…&state=…` |
-| **4** | Callback | `302 → /acme/dashboard` (session set, `kb_user_id` mirror bana, `kb_user_tenant` row bani) |
+| **3** | CP par login (admin user jo product ka access rakhta hai) | `302 → http://mizaanbitserp.test:8001/auth/kb/callback?code=…&state=…` — **`return_to` query string mein nahi hai** |
+| **4** | Callback | `302 → /acme/dashboard` (session set, `kb_user_id` mirror bana, `kb_user_tenant` row bani). Destination **state row** se aaya, callback URL se nahi |
 | **5** | `http://mizaanbitserp.test:8001/beta/dashboard` (doosra tenant, jiska member nahi) | **`404`** — `EnsureTenantMembership` (07 §3.8) |
 | **6** | `php artisan tinker` → `App\Models\User::latest('id')->first()` | `kb_user_id` set, `password` **null**, `token_version` ≥ 1 |
 | **7** | `kb_user_tenant` table | Row maujood, `role_hint` CP ke `kb_user_product_access.role` se match, `revoked_at` null |
@@ -4485,6 +4708,7 @@ dump(DB::table('kb_snapshot')->first(['status','access_mode','version']));
 # → grace / read_only / 8
 ```
 
+
 ### 3.7 Feature tests
 
 **`tests/TestCase.php`** (product repo) — `07` §10.5 ka `TenantTestCase` base:
@@ -4570,7 +4794,7 @@ abstract class TenantTestCase extends TestCase
 }
 ```
 
-#### T1–T12 — test matrix
+#### T1–T25 — test matrix
 
 | # | Test | Setup | Expected |
 |---|---|---|---|
@@ -4588,12 +4812,17 @@ abstract class TenantTestCase extends TestCase
 | **T12** | Webhook: bad signature | ek char badla | `401` |
 | **T13** | Webhook: stale timestamp | `ts = time()-400` | `401` |
 | **T14** | Webhook: duplicate event id | do dafa wohi | `200` + `duplicate:true`, state ek dafa |
-| **T15** | Callback: URL slug membership se **nahi** aata | `tenants` = `[beta]`, `return_to=/acme/dashboard` | `302` picker/`beta`, `kb_user_tenant` mein `acme` **nahi** |
+| **T15** | Callback: URL slug membership se **nahi** aata | state `return_to=/acme/dashboard`, `tenants` = `[beta]` | `302` picker/`beta`, `kb_user_tenant` mein `acme` **nahi** |
 | **T16** | Callback: `error=access_denied` | `?error=access_denied&state=…` | `302 kb.no-access`, koi user nahi bana |
 | **T17** | Callback: state replay | wohi state do dafa | doosri dafa `state_mismatch` |
 | **T18** | `Entitlement::has('module.inventory')` | snapshot `inventory=removed` | **`false`** (flag `true` hone ke bawajood) |
 | **T19** | `Entitlement::limit('users')` alias | `limits.seats = 3` | `3` |
 | **T20** | `entitled:module.inventory` middleware | route par | `403` |
+| **T21** | Callback: URL par crafted `?return_to=` **ignore** hota hai | state `return_to=/acme/dashboard`, callback URL par `&return_to=/acme/settings/users` | `302 /acme/dashboard` — query string wala **nahi** |
+| **T22** | Login CSRF: doosre browser ka state reject | state browser A mein bana, callback browser B (alag session) se | `302 /login`, koi session nahi, `kb_user_tenant` khali |
+| **T23** | Normal flow regenerate ke **baad** bhi chalta hai | state bana → callback usi session se | `302 /acme/dashboard`, `assertAuthenticated()`, session id **badla** hua |
+| **T24** | Webhook: `X-KB-Event` signed envelope ke `type` se match kare | signed body `subscription.grace`, header `user.disabled` | **`400`**, `webhook_events` khali |
+| **T25** | Webhook: `X-KB-Event-Id` signed envelope ke `id` se match kare | signed body, header mein alag id | **`400`**, idempotency bypass nahi |
 
 #### T1–T6, T18–T20 — `SubscriptionGuardTest`
 
@@ -4706,7 +4935,7 @@ final class SubscriptionGuardTest extends TenantTestCase
 }
 ```
 
-#### T11–T14 — `WebhookVerificationTest`
+#### T11–T14, T24–T25 — `WebhookVerificationTest`
 
 ```php
 // product app: tests/Feature/WebhookVerificationTest.php  (NEW)
@@ -4781,6 +5010,55 @@ final class WebhookVerificationTest extends TenantTestCase
         $this->assertSame(8, (int) DB::table('kb_snapshot')->value('version'));
     }
 
+    /**
+     * T24 — "signed but misrouted".
+     *
+     * Signature body ko bind karti hai, header ko nahi. Attacker signed
+     * `subscription.grace` body replay kar ke `X-KB-Event: user.disabled`
+     * bhejta hai — handler galat chalta.
+     */
+    public function test_event_type_header_must_match_the_signed_envelope(): void
+    {
+        $payload = $this->payload('subscription.grace');
+        $ts      = time();
+        $sig     = hash_hmac('sha256', $ts.'.'.$payload, $this->secret);
+
+        $this->call('POST', '/webhooks/kb', [], [], [], [
+            'CONTENT_TYPE'        => 'application/json',
+            'HTTP_ACCEPT'         => 'application/json',
+            'HTTP_X_KB_EVENT_ID'  => '01JQ8Z4N2P6R3T9V5W1X7Y0B2C',
+            'HTTP_X_KB_EVENT'     => 'user.disabled',          // body se match nahi
+            'HTTP_X_KB_TIMESTAMP' => (string) $ts,
+            'HTTP_X_KB_SIGNATURE' => 't='.$ts.',v1='.$sig,
+        ], $payload)->assertStatus(400);
+
+        $this->assertSame(0, WebhookEvent::count());
+    }
+
+    /**
+     * T25 — idempotency bypass via header.
+     *
+     * Wohi signed body, naya `X-KB-Event-Id` → nayi idempotency row →
+     * event dobara apply (e.g. `subscription.renewed` do dafa).
+     */
+    public function test_event_id_header_must_match_the_signed_envelope(): void
+    {
+        $payload = $this->payload('subscription.grace');
+        $ts      = time();
+        $sig     = hash_hmac('sha256', $ts.'.'.$payload, $this->secret);
+
+        $this->call('POST', '/webhooks/kb', [], [], [], [
+            'CONTENT_TYPE'        => 'application/json',
+            'HTTP_ACCEPT'         => 'application/json',
+            'HTTP_X_KB_EVENT_ID'  => '01JQ8Z4N2P6R3T9V5W1X7Y0B2Z',  // alag id
+            'HTTP_X_KB_EVENT'     => 'subscription.grace',
+            'HTTP_X_KB_TIMESTAMP' => (string) $ts,
+            'HTTP_X_KB_SIGNATURE' => 't='.$ts.',v1='.$sig,
+        ], $payload)->assertStatus(400);
+
+        $this->assertSame(0, WebhookEvent::count());
+    }
+
     private function payload(string $event, int $version = 9): string
     {
         return json_encode([
@@ -4828,6 +5106,7 @@ namespace Tests\Feature;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use KhattakBits\SsoClient\OAuth\Pkce;
 use KhattakBits\SsoClient\OAuth\StateStore;
 use Tests\TestCase;
@@ -4840,6 +5119,12 @@ final class CallbackMembershipTest extends TestCase
     {
         parent::setUp();
         $this->withoutVite();
+
+        // Session cookie ko raw bhejna hai — warna `EncryptCookies` usay
+        // decrypt karne ki koshish karega aur `StartSession` naya id bana
+        // dega. Uske baghair har test mein session id badal jati hai aur
+        // login-CSRF check hamesha fail hota hai (test jhoot bolta hai).
+        $this->disableCookieEncryption();
     }
 
     public function test_membership_comes_from_cp_not_from_the_url_slug(): void
@@ -4886,8 +5171,113 @@ final class CallbackMembershipTest extends TestCase
         $this->get('/auth/kb/callback?code=abc&state='.$state)->assertRedirect(route('kb.login'));
     }
 
+    /**
+     * T22 — login CSRF.
+     *
+     * Attacker browser A mein login shuru karta hai, callback URL capture
+     * karta hai, aur victim (browser B) ko bhej deta hai. Bina session
+     * binding ke victim ATTACKER ke account mein login ho jata.
+     */
+    public function test_state_started_in_another_browser_is_rejected(): void
+    {
+        $this->fakeCp(tenants: [
+            ['tenant_id' => '01JQ8Z3K7M4X2V9B5N1C6D0RTA', 'slug' => 'acme',
+             'product_key' => 'mizaan', 'role' => 'owner', 'status' => 'active'],
+        ]);
+
+        // ── Browser A (attacker) — apna login shuru ─────────────────────
+        $this->asBrowser();
+
+        $location = $this->get('/auth/kb/start?return_to=/acme/dashboard')
+            ->assertRedirect()
+            ->headers->get('Location');
+
+        parse_str((string) parse_url((string) $location, PHP_URL_QUERY), $query);
+
+        $state = (string) ($query['state'] ?? '');
+
+        $this->assertNotSame('', $state, 'start route ne state generate nahi ki');
+
+        // ── Browser B (victim) — alag session ───────────────────────────
+        $this->flushSession();
+        $this->app['session']->setId(Str::random(40));
+        $this->asBrowser();
+
+        // A ka callback URL B kholta hai
+        $this->get('/auth/kb/callback?code=abc&state='.$state)
+            ->assertRedirect(route('kb.login'));
+
+        // Koi login nahi hua, koi mirror user nahi bana
+        $this->assertGuest();
+        $this->assertSame(0, \App\Models\User::whereNotNull('kb_user_id')->count());
+    }
+
+    /**
+     * T23 — normal flow regenerate ke bawajood chalta hai.
+     *
+     * Yeh test guard 1 (session binding) aur guard 2 (regenerate) ke
+     * ORDER ko pin karta hai. Agar `regenerate()` ko `callback()` se
+     * pehle le jayein to yeh fail ho jayega.
+     */
+    public function test_normal_flow_survives_the_post_login_session_regenerate(): void
+    {
+        $this->fakeCp(tenants: [
+            ['tenant_id' => '01JQ8Z3K7M4X2V9B5N1C6D0RTA', 'slug' => 'acme',
+             'product_key' => 'mizaan', 'role' => 'owner', 'status' => 'active'],
+        ]);
+
+        $this->asBrowser();
+
+        $location = $this->get('/auth/kb/start?return_to=/acme/dashboard')
+            ->headers->get('Location');
+
+        parse_str((string) parse_url((string) $location, PHP_URL_QUERY), $query);
+
+        $before = $this->app['session']->getId();
+
+        $this->get('/auth/kb/callback?code=abc&state='.$query['state'])
+            ->assertRedirect('/acme/dashboard');
+
+        // regenerate() chala — id badla
+        $this->assertNotSame($before, $this->app['session']->getId(),
+            'regenerate() ne session id nahi badli — fixation guard gayab hai');
+
+        $this->assertAuthenticated();
+    }
+
+    /**
+     * T21 — callback URL par crafted `?return_to=` ignore hota hai.
+     */
+    public function test_return_to_on_the_callback_url_is_ignored(): void
+    {
+        $this->fakeCp(tenants: [
+            ['tenant_id' => '01JQ8Z3K7M4X2V9B5N1C6D0RTA', 'slug' => 'acme',
+             'product_key' => 'mizaan', 'role' => 'owner', 'status' => 'active'],
+        ]);
+
+        $state = $this->primeState(returnTo: '/acme/dashboard');
+
+        // Attacker callback URL par apna destination chipkata hai
+        $this->get('/auth/kb/callback?code=abc&state='.$state.'&return_to=/acme/settings/users')
+            ->assertRedirect('/acme/dashboard');   // state wala — query string wala NAHI
+    }
+
+    /**
+     * State row ko maujooda session se bandho — browser ka cookie
+     * simulate karta hai. Har request ke liye dobara call karein agar
+     * beech mein koi request gayi ho (woh id badal deti hai).
+     */
+    private function asBrowser(): void
+    {
+        $this->withCookie($this->app['session']->getName(), $this->app['session']->getId());
+    }
+
     private function primeState(string $returnTo): string
     {
+        // State usi session se bandhi hogi jise callback bhejega —
+        // warna login-CSRF guard legit flow bhi reject kar dega.
+        $this->asBrowser();
+
         $state = 'test-state-'.uniqid();
 
         app(StateStore::class)->put($state, Pkce::verifier(), $returnTo, 'acme');
@@ -4919,7 +5309,11 @@ final class CallbackMembershipTest extends TestCase
 }
 ```
 
-**T15 ka assertion hi `07` §3.6.1 ka poora point hai.** `return_to=/acme/dashboard` URL mein `acme` hai, magar CP ne sirf `beta` bheja — is liye membership `beta` ki banti hai aur user `beta` par redirect hota hai. Agar kabhi koi `return_to` se membership banane ki koshish kare, **yeh test fail ho jayega**.
+**T15 ka assertion hi `07` §3.6.1 ka poora point hai.** `return_to=/acme/dashboard` state row mein hai, magar CP ne sirf `beta` bheja — is liye membership `beta` ki banti hai aur user `beta` par redirect hota hai. Agar kabhi koi `return_to` se membership banane ki koshish kare, **yeh test fail ho jayega**.
+
+**T22/T23 jodi mein padhein.** T22 sabit karta hai ke guard maujood hai; T23 sabit karta hai ke woh guard **legit login ko nahi torta**. Sirf T22 hota to ek "hamesha reject karo" wala bug bhi pass ho jata; sirf T23 hota to guard gayab hone par bhi pass ho jata. Dono saath hi matlab rakhte hain.
+
+**`asBrowser()` ke baghair yeh tests jhoot bolte hain.** Laravel test mein cookie na bhejne par `StartSession` `setId(null)` karta hai → **naya random id** har request par. Uske baghair `primeState()` ka id aur callback ka id kabhi match nahi karte, T22 pass hota hai magar **ghalat wajah se**, aur T23 fail hota hai. Isi liye `disableCookieEncryption()` + explicit cookie — aur `setUp()` mein comment hai taake koi usay "fazool" samajh kar hata na de.
 
 ---
 
@@ -4945,6 +5339,11 @@ final class CallbackMembershipTest extends TestCase
 | State row hai magar `expires_at` guzar gaya | CP par login interrupt mein user ne 10 min se zyada liya | `kb.oauth.state_ttl` barhayein (default 600s) |
 | **State row banti hi nahi** | `redirect()` chala hi nahi — product seedha CP par bhej raha hai (`/oauth/authorize` manually) | `/auth/kb/start` use karein, manual URL nahi |
 | State har dafa mismatch, magar row maujood hai | Do apps **ek hi DB** share kar rahe hain (dev mein aam) — `kb_oauth_state` rows collide kar rahi hain | Har app ka alag database, ya table prefix |
+| **Har login** `state_session_mismatch`, log mein `kb.sso.state_session_mismatch` | `session()->regenerate()` ko `callback()` se **pehle** le jaya gaya, ya `pull()` callback ke baad chala | Order wapas karein: `pull()` (purana id) → `regenerate()` (naya id). `§2.8.6` ka table |
+| Mismatch sirf Safari/private mode mein, ya sirf `SameSite=Strict` par | Callback cross-site top-level `GET` hai — `Strict` cookie nahi bhejta, `Lax` bhejta hai | `SESSION_SAME_SITE=lax` (default). Callback ko `POST` na banayein |
+| Mismatch sirf tab jab user CP par **10 min se zyada** laga | State expire ho gayi — session id ka masla nahi | `kb.oauth.state_ttl` barhayein, ya CP par login interrupt chhota karein |
+| Mismatch sirf tab jab product `http://` aur CP `https://` par hai | Cross-scheme par `Secure` cookie nahi jati → naya session → naya id | Dono `https://`, ya local mein dono `http://` |
+| Login ke baad galat page par pahuncha (dashboard ki jagah picker) | `return_to` state row mein **nahi** gaya — koi purana code `$request->query('return_to')` padh raha hai | `callback()` `$stored->return_to` DTO mein daale, controller `$session->returnTo` use kare (`§2.8.6`) |
 
 ### 4.3 Clock skew
 
@@ -5010,9 +5409,9 @@ final class CallbackMembershipTest extends TestCase
 | 7 | `WebhookController` + 4 handlers + `HandlesKbEvent` | 1.5 |
 | 8 | `BillingController` + 2 Inertia pages + renew-link flow | 1.0 |
 | 9 | `PollUserChanges` + `RefreshSnapshots` + scheduler | 0.5 |
-| 10 | Tests T1–T20 + `TenantTestCase` | 2.0 |
+| 10 | Tests T1–T25 + `TenantTestCase` | 2.5 |
 | 11 | Yeh document + troubleshooting + local runbook | 1.0 |
-| | **Total** | **13.0** |
+| | **Total** | **13.5** |
 
 **Yeh effort `07` ke effort se overlap nahi karta.** `07` §12 mein package install, route restructure, `tenantUrl()`, provisioning, backup/privileges hain (21.5 din). Yahan **sso-client** aur **example integration** hai. Dono ke darmiyan sirf `TenantTestCase` shared hai (`07` §10.5) — usay `07` mein gina gaya hai, yahan nahi.
 
@@ -5020,18 +5419,226 @@ final class CallbackMembershipTest extends TestCase
 
 ---
 
-## 6. Changelog
+## 6. Changelog, faisle, aur security review
+
+| § | Kya |
+|---|---|
+| 6.1 | `GET /api/v1/plans` contract — `05` §1.2 mein add karna hai |
+| 6.2 | `tenant.provisioned` — **retired** |
+| 6.3 | `users.password` nullable — **`core` v1.5.0** |
+| 6.4 | §2.9 / §2.10 / §2.12 / §2.14 ka authorization review |
+
+### 6.0 Changelog
 
 | v | Date | Kya |
 |---|---|---|
 | **v1** | 13 Nov 2026 | Initial. Registration walkthrough (8 steps, 3 plans × 14 entitlements), `khattakbits/sso-client` (folder structure, composer, provider, config, 5 migrations, OAuth+PKCE, mirror/owner mapping, API client, resolve ladder, guard, entitlements, webhook, billing pages, token refresh, feed poll), E2E runbook + T1–T20, troubleshooting (5 named + 14 more), 13 din |
+| **v2** | 14 Nov 2026 | **Login CSRF fix** — `StateStore::pull()` ab `session_id` ko current session se compare karta hai; `CallbackController` ka misleading comment theek; T22/T23 + `asBrowser()` test helper. **`return_to` provenance fix** — `callback()` `$stored->return_to` DTO mein daalta hai, controller `$request->query('return_to')` **nahi** padhta; T21 + §3.4 steps 1/4. **Teen open gaps band** — `GET /api/v1/plans` contract (§6.1), `tenant.provisioned` **retired** (§6.2), `users.password` nullable → `core` (§6.3). Effort 13.0 → 13.5 |
 
-**Kholi gayi teen cheezein jo baaki docs mein band karni hain:**
+### 6.1 `GET /api/v1/plans` — contract (05 §1.2 mein add karna hai)
 
-1. **`GET /api/v1/plans?product_key=`** — renew/upgrade page par plan options dikhane ke liye zaroori, magar `05` §1.2 mein nahi hai. Phase 1 mein renew-link `plan_key` optional hai, is liye MVP block nahi hota; upgrade UI ke liye chahiye. **`05` §1.2 mein add karna hai.**
-2. **`tenant.provisioned` ki direction** — `05` §4.1 product→CP kehta hai (trigger text se), magar wohi table CP→product events bhi rakhti hai. `§2.14.6` idempotent recovery ke tor par handle karta hai, magar **confirm karna hai**.
-3. **`users.password` nullable** — `0001_01_01_000000_create_users_table.php` mein `NOT NULL` hai. SSO-only user ke liye nullable karna **lazmi** hai (`§2.6`). Yeh `khattakbits/core` v1.5.0 ka hissa hona chahiye (`05` §5.1.1), warna har product ko apni migration likhni padegi.
+**Status: `05` is turn mein edit NAHI kiya.** Yeh block woh text hai jo `05` §1.2 mein jayega; tab tak `08` authoritative hai. `§2.15.2` ka `plansForUi()` isi ko consume karega.
+
+```
+GET /api/v1/plans?product_key=mizaan&include_hidden=false
+Authorization: Bearer <token>
+Accept: application/vnd.kb.v1+json
+```
+
+**Auth:** do caller allowed hain — (a) user access token (product apne user ki taraf se poochta hai), (b) `client_credentials` token. Anonymous **nahi**.
+
+**Query:**
+
+| Param | Type | Default | Rule |
+|---|---|---|---|
+| `product_key` | string, 60 | client ka bound product | Agar diya aur client ke product se match na kare → **403 `product_scope_mismatch`** |
+| `include_hidden` | bool | `false` | `is_public = false` plans sirf `true` par. Aur **sirf** first-party client (`is_first_party = true`) — warna **403** |
+| `currency` | string, 3 | product ka default | `PKR` |
+
+**200 response:**
+
+```json
+// GET /api/v1/plans?product_key=mizaan
+{
+  "schema": 1,
+  "product_key": "mizaan",
+  "currency": "PKR",
+  "data": [
+    {
+      "key": "starter",
+      "name": "Starter",
+      "tier": 1,
+      "is_public": true,
+      "description": "For a single accountant",
+      "trial_days": 14,
+      "prices": [
+        { "interval": "month", "amount_minor": 350000 },
+        { "interval": "year",  "amount_minor": 3500000 }
+      ],
+      "entitlements": {
+        "flags": {
+          "module.accounting": true,
+          "module.reports": true,
+          "module.inventory": false,
+          "module.payroll": false,
+          "accounting.invoices": true,
+          "accounting.periods": true,
+          "accounting.multi_currency": false,
+          "inventory.warehouses": false,
+          "reports.advanced": false,
+          "audit_export": false,
+          "custom_domain": false
+        },
+        "limits": { "seats": 3 },
+        "quotas": { "storage_mb": 5120, "api.calls": 100000 },
+        "modules": {
+          "accounting": "core",
+          "reports": "core",
+          "inventory": "optional",
+          "payroll": "optional"
+        }
+      },
+      "updated_at": "2026-11-10T09:12:00Z"
+    },
+    {
+      "key": "business",
+      "name": "Business",
+      "tier": 2,
+      "is_public": true,
+      "description": "For a growing team",
+      "trial_days": 14,
+      "prices": [
+        { "interval": "month", "amount_minor": 950000 },
+        { "interval": "year",  "amount_minor": 9500000 }
+      ],
+      "entitlements": {
+        "flags": {
+          "module.accounting": true,
+          "module.reports": true,
+          "module.inventory": true,
+          "module.payroll": false,
+          "accounting.invoices": true,
+          "accounting.periods": true,
+          "accounting.multi_currency": true,
+          "inventory.warehouses": true,
+          "reports.advanced": true,
+          "audit_export": false,
+          "custom_domain": false
+        },
+        "limits": { "seats": 15 },
+        "quotas": { "storage_mb": 51200, "api.calls": 1000000 },
+        "modules": {
+          "accounting": "core",
+          "reports": "core",
+          "inventory": "optional",
+          "payroll": "optional"
+        }
+      },
+      "updated_at": "2026-11-10T09:12:00Z"
+    }
+  ],
+  "etag": "W/\"b93e1f7c\""
+}
+```
+
+`enterprise` upar **nahi** hai kyunke uska `is_public = false` hai (`§1.6`). `include_hidden=true` + first-party client par woh bhi aayega.
+
+**Rules:**
+
+| # | Rule | Kyun |
+|---|---|---|
+| 1 | **List only.** Koi `POST`/`PATCH`/`DELETE` nahi — plan create/edit CP ke admin UI se hota hai, API se nahi | Yeh read contract hai; write path ka audit/admin surface alag hai |
+| 2 | `-1` limits mein **unlimited** hai, exactly `resolve` ki tarah. `null` **nahi** | Do endpoint, ek hi encoding — warna `Entitlement::limit()` do jagah do tarah handle karega |
+| 3 | `limits`/`quotas` **hamesha** maujood, kabhi `null` nahi. Khali object `{}` valid hai | Client ko `??` chains se bachao |
+| 4 | `entitlements` **plan ka template** hai, tenant ka live state **nahi** | Live state `resolve`/snapshot se aata hai. In dono ko mix karna `§2.11` ka fail-closed ladder tor dega |
+| 5 | `deprecated_at` (nullable ISO-8601) — plan retire ho raha hai magar maujooda subscribers par hai | Product UI "yeh plan band ho raha hai" dikha sake, aur renew-link usay reject kar sake |
+| 6 | **Khali list ≠ 404.** `200 {"data":[]}` ka matlab "is product ke koi plan nahi" | `404` ka matlab product nahi mila — do alag cheezein |
+| 7 | `ETag` + `Cache-Control: max-age=300, private`. `If-None-Match` → **304** | Plans din mein shayad ek dafa badalte hain; product har page load par na poochhe |
+| 8 | `plan_key` renew-link mein (`§2.15.2`) isi list ka key hona chahiye, warna **422 `plan_not_available`** | Warna product ek aisa plan bech sakta hai jo CP ne retire kar diya |
+| 9 | `is_public = false` plan ka `key` **guessing** se bhi na mile — `include_hidden` ke baghair woh response mein nahi | Enterprise pricing confidential hoti hai |
+
+**Implementation `§2.15.2` mein hai** — `BillingController::plansForUi()` isi contract ko `KbApiClient::plans()` ke through padhta hai, 5 min cache ke saath, aur fail par `[]` (UI degrade, renew block nahi).
+
+**`plans()` `KbApiClient` mein `tenants()` jaisa sakht nahi hai** — `tenants()` 5xx par **throw** karta hai (warna membership evict ho jati, `§2.9.2`), magar `plans()` `[]` de sakta hai kyunke plan list ka na hona kisi authorization faisle ko nahi badalta. Farq jaan boojh kar hai: **jo data membership/access ka faisla deta hai woh fail-closed, jo sirf UI hai woh degrade ho sakta hai.**
+
+### 6.2 `tenant.provisioned` — **RETIRED**
+
+**Faisla:** event dono directions se hataya gaya. Na CP bhejta hai, na product emit karta hai.
+
+| Sawaal | Jawab |
+|---|---|
+| CP ko product se provisioning ack chahiye? | **Nahi.** CP tenant registry khud banata hai aur `subscription.created` mein `tenant_id` deta hai (`04` §3.2) |
+| Product ko CP se provisioning event chahiye? | **Nahi.** Tenant row `tenants:provision` command se banti hai (`07` §6.6.2), owner mapping `subscription.created` se (`07` §6.6.1) |
+| Handler rakhein? | **Nahi.** `§2.14.6` retired; `§2.2` tree, `§1.8` event list, `§2.14.2` dispatcher — teenon se hata diya |
+
+**`05` §4.1 se bhi hatana hai** — is turn mein `05` edit nahi kiya. Jab tak woh update na ho, `08` ka event list (`§1.8`) authoritative hai. `05` update karte waqt yeh bhi check karein ke `data.owner_user_id` ka zikr kahin aur na bache.
+
+**Kya khoya:** ek "recovery" path jo asal mein recovery nahi thi — `map()` idempotent hai, magar usay trigger karne ka koi consumer nahi tha. Asli recovery `tenants:provision` re-run hai (`§2.14.6` ka table).
+
+### 6.3 `users.password` nullable — **`khattakbits/core` v1.5.0**
+
+**Faisla:** authoritative migration `core` mein jayegi, `sso-client` mein nahi.
+
+| Cheez | Kahan | Kyun |
+|---|---|---|
+| `users` table | `core` (D1) | Table core ki milkiyat hai; `sso-client` us par sirf columns add karta hai |
+| `password` nullable | **`core` v1.5.0** | Multi-auth ka structural faisla hai, SSO ka feature nahi. Har product ki apni copy = N migrations + `down()` mein takraav |
+| `kb_user_id`, `blocked_at`, `token_version` | `core` v1.5.0 (per `05` §5.1.1) | Wohi wajah — identity columns `users` ke saath rehte hain |
+| Transitional shim | `sso-client` (`§2.6`) | Aaj kaam karne ke liye. Core ship hone par **delete** |
+
+**Shim kaise pehchana jayega:** `§2.6` ki migration mein `⚠️ TRANSITIONAL SHIM` comment hai aur `§6.3` ka reference. `change()` idempotent hai, is liye core ke baad bhi chalne par kuch nahi tootta — magar code review mein yeh block hatna chahiye. **Ek faisla, ek jagah** — yeh `07` §2.4 ki "connection pinning" wali soch ka wohi asool hai.
+
+**`05` §5.1.1 mein confirm karna hai** ke `v1.5.0` mein yeh char columns hain: `kb_user_id`, `blocked_at`, `blocked_reason`, `token_version`, aur `password` nullable. `blocked_reason` `05` §5.1.1 mein listed nahi tha magar `§2.6`/`§2.9.1` usay use karte hain — yeh `05` update karte waqt add karein.
 
 ---
 
-*Yeh document design + reference implementation hai. `NOT VERIFIED`: CP ke actual JSON payloads (`users/tenants`, `resolve` ka `tenant.owner`, `subscription.created` ka `tenant.owner`) — teenon CP ship hone par confirm karne hain; `tenant.provisioned` ki direction; `khattakbits/core` v1.5.0 ke `blocked_at`/`token_version` columns (agar woh pehle aa gaye to `§2.6` ki migration ka `hasColumn()` guard unhein skip kar dega); aur `GET /api/v1/plans` ka wujood hi nahi.*
+### 6.4 Security review — §2.9, §2.10, §2.12, §2.14
+
+Teenon sections authorization ke lehaz se dobara padhe gaye. **Findings neeche, aur jo theek kiya gaya woh mark hai.**
+
+#### §2.9 (owner mapping) — 4 findings
+
+| # | Finding | Verdict |
+|---|---|---|
+| 1 | `MirrorUser::sync()` **email claim** sirf `email_verified` + `kb_user_id IS NULL` par — do conditions, dono zaroori | ✅ **Sahi.** Ek bhi hataye to account takeover. `§2.9.1` ka comment isi ko pin karta hai |
+| 2 | `TenantOwnerMapper::resolveOwner()` owner **sirf CP se** leta hai — webhook payload, snapshot, ya live `resolve`. Kabhi `request()` se nahi | ✅ **Sahi.** Owner attacker-controlled input se nahi aata |
+| 3 | **`TenantOwnerMapper::map()` `role_hint` par bharosa karta hai?** Nahi — woh `'owner'` **hardcode** karta hai, `$owner` array se role nahi leta | ✅ **Sahi**, magar doc mein likha nahi tha — ab `§2.9.3` ke neeche note add kiya |
+| 4 | `ReconcileMemberships` `$seen` khali hone par **sab revoke** karta hai. Agar `tenants()` kabhi `[]` return kare (CP bug/outage) to har user har tenant se nikal jayega | ⚠️ **Design mein risk, mitigation maujood** — `KbApiClient::tenants()` 5xx par **throw** karta hai (`§2.10`), is liye `[]` sirf genuine `200 {"tenants":[]}` par aata hai. **Magar ek hole bacha tha:** agar CP `200` de magar `tenants` key **gayab** ho, to `?? []` khali array dega aur sab revoke ho jayega. **Fix: `§2.10` mein strict shape check add kiya** — key na ho ya array na ho to `throw` |
+
+#### §2.12 (`SubscriptionGuard`) — 4 findings
+
+| # | Finding | Verdict |
+|---|---|---|
+| 1 | Guard **`tenant() === null`** par bypass karta hai (central routes: callback, webhook, billing) | ✅ **Sahi** — magar sirf tab jab `EnsureTenantMembership` (`07` §3.8) tenant routes par lazmi ho. Warna koi bhi `/{slug}/…` route guard ke baghair chalta. **`§2.12` mein dependency note add kiya** |
+| 2 | `read_only` mein **`GET`/`HEAD`/`OPTIONS` allowed** | ✅ **Sahi** — read-only ka matlab yahi hai. Magar yeh `GET` par **side effects** wale routes ko bhi allow karta hai (e.g. `GET /invoices/{id}/send-email`). **`§2.12` mein "GET par mutation na karein" rule add kiya** |
+| 3 | `isBillingRoute()` `str_starts_with($name, 'kb.billing.')` — route **name** par, path par nahi | ✅ **Sahi.** Path par hota to attacker `?next=/billing/...` se bypass kar sakta. Name server-side defined hai |
+| 4 | `blocked` → `abort(403)`, `locked` → `redirect` | ✅ **Sahi**, aur `§2.12` ka `403` vs `404` reasoning (`07` §3.8 se farq) theek hai |
+
+#### §2.14 (webhook) — 5 findings
+
+| # | Finding | Verdict |
+|---|---|---|
+| 1 | HMAC **raw bytes** par, `hash_equals`, ±300s | ✅ **Sahi.** `$request->all()` ya re-encoded JSON use karna signature tor deta |
+| 2 | `X-KB-Event` / `X-KB-Event-Id` **header** se aate hain, body se nahi — aur **signature mein cover nahi** hain | ⚠️ **Asli flaw.** Signature sirf `{timestamp}.{body}` cover karta hai. Attacker jo valid body replay kar sake woh `X-KB-Event: user.disabled` set kar ke `UserDisabled` handler chala sakta hai jabke body `invoice.paid` ki thi. **Fix: envelope ke signed `type`/`id` ko header se `hash_equals` cross-check karein** — mismatch par `400`. `§2.14.1` mein add kiya |
+| 3 | Idempotency `insertOrIgnore` + unique `event_id`, fail par row **delete** | ✅ **Sahi** — aur delete hi correct hai (`failed` mark karna retry ko duplicate bana deta) |
+| 4 | `version` stale-reject `$incoming < $snapshot->version` — **equal** version accept hota hai | ⚠️ **Deliberate, magar likha nahi tha.** `<=` karna duplicate webhook ko drop kar deta jabke woh legitimately retried ho. Equal accept karna idempotent hai (wohi data dobara likhna). **`§2.14.3` mein note add kiya** |
+| 5 | `purgeTenantSessions()` `sessions` table se **`user_id IN (...)`** delete karta hai — central DB par | ✅ **Sahi**, magar `SESSION_CONNECTION=central` par depend karta hai (`07` §2.4). Warna tenant DB mein `sessions` table hi nahi milega aur `QueryException` aayega |
+
+#### §2.10 (`KbApiClient`) — 2 findings (review ke dauraan mile, scope se bahar magar related)
+
+| # | Finding | Verdict |
+|---|---|---|
+| 1 | **`resolve()` token ke baghair CP call kar raha tha** — `request()` khud auth nahi lagata, aur `resolve()` `withToken()` bhool gaya tha | ⚠️ **Asli bug, fail-closed.** CP `401` deta → `decode()` throw karta → `ResolvesSubscription` stale ladder par chala jata. Yani feature **kaam nahi karta** magar **unsafe nahi** hota. **Fix: `withToken($this->clientToken())`** |
+| 2 | `tenants()` shape loose thi (`?? []`) | ⚠️ **Asli hole** — upar §2.9 row 4 dekhein. **Fix: strict `array_key_exists` + `is_array`** |
+
+#### Sab se ahem do findings
+
+1. **Webhook `X-KB-Event` header signed nahi tha (§2.14).** Signature body ko bind karti hai, magar **handler ka faisla** header se hota hai — yani signed `invoice.paid` body ke saath `X-KB-Event: user.disabled` bhej kar galat handler chalaya ja sakta tha, aur `X-KB-Event-Id` badal kar idempotency bypass. Yeh **"signed but misrouted"** class ka asli authorization gap tha. Fix: envelope ke `id`/`type` (dono signed) ko header se `hash_equals` match karna, mismatch par `400`. Tests T24/T25.
+
+2. **`ReconcileMemberships` ka `$seen` + loose `tenants()` shape (§2.9/§2.10).** `?? []` par CP ka malformed `200` khali list ban jata, aur khali `$seen` ka matlab **har membership revoke**. Ek CP bug (ya proxy jo body kaat de) sab users ko sab tenants se bahar kar deta. Fix: strict shape check, `throw` — taake "CP down" aur "CP ne kuch ajeeb bheja" ka behaviour ek ho: **kuch na todo**.
+
+**Dono ka aik hi sabak:** authorization ka faisla **signed/verified data** par hona chahiye, aur "jawab nahi aaya" ko "jawab khali aaya" se **alag** treat karna chahiye. Yeh `07` §3.8 ke fail-closed rule ka wohi asool hai, bas do nayi jagah par.
+
+---
+
+*Yeh document design + reference implementation hai. `NOT VERIFIED`: CP ke actual JSON payloads (`users/tenants`, `resolve` ka `tenant.owner`, `subscription.created` ka `tenant.owner`) — teenon CP ship hone par confirm karne hain; `khattakbits/core` v1.5.0 ke `kb_user_id`/`blocked_at`/`blocked_reason`/`token_version` columns aur `password` nullable (agar woh pehle aa gaye to `§2.6` ki migration ka `hasColumn()` guard unhein skip kar dega). `GET /api/v1/plans` ka contract `§6.1` mein hai magar `05` mein **abhi add nahi hua**. `tenant.provisioned` **retired** — `05` §4.1 se hatana baaki hai.*
