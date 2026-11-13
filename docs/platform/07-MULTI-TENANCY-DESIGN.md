@@ -1,10 +1,10 @@
 # 07 — Multi-Tenancy Design (Path-Based)
 
-**Date:** 13 Nov 2026
-**Repo:** `E:/LaraProjects/saas-starter` (branch `master`)
-**Depends on:** `02-ARCHITECTURE-DECISIONS.md` (D1 mirror users, D2 audit split, §5.1 central tables, §5.3 tenant tables, §5.5 Step 0 cross-DB FK fix), `04-CONTROL-PLANE-DESIGN.md` (§3 `tenants_registry`, §7 slug rules), `05-IDENTITY-HUB-SPEC.md` (§1.4 redirect URI allowlist, §3.4 renew-link, §4 webhooks, §5 disable propagation), `06-PAYMENTS-DESIGN.md` (§2.9 invoice numbering per tenant)
-**Inputs:** `vendor/khattakbits/core/**`, `app/Modules/**/routes.php`, `app/Modules/**/menu.php`, `routes/{web,console}.php`, `config/{database,session,cache,queue,filesystems,auth,permission}.php`, `resources/js/**`, `khattakbits-ui/src/**`, `phpunit.xml`
-**Verified package source:** `stancl/tenancy` **v3.10.1** (installed into `/tmp/kb-tenancy` from Packagist, read directly — every claim in §1 cites a file)
+**Date:** 13 Nov 2026 · **Revised:** 13 Nov 2026 (**v2** — owner mapping, membership source of truth, provisioning resilience, DB privileges; changelog §15)  
+**Repo:** `E:/LaraProjects/saas-starter` (branch `master`)  
+**Depends on:** `02-ARCHITECTURE-DECISIONS.md` (D1 mirror users, D2 audit split, §5.1 central tables, §5.3 tenant tables, §5.5 Step 0 cross-DB FK fix), `04-CONTROL-PLANE-DESIGN.md` (§3 `tenants_registry`, §7 slug rules), `05-IDENTITY-HUB-SPEC.md` (§1.2 endpoints, §1.4 redirect URI allowlist, §3.2 resolve, §3.4 renew-link, §4 webhooks, §5 disable propagation), `06-PAYMENTS-DESIGN.md` (§2.9 invoice numbering per tenant)  
+**Inputs:** `vendor/khattakbits/core/**`, `app/Modules/**/routes.php`, `app/Modules/**/menu.php`, `routes/{web,console}.php`, `config/{database,session,cache,queue,filesystems,auth,permission}.php`, `resources/js/**`, `khattakbits-ui/src/**`, `phpunit.xml`  
+**Verified package source:** `stancl/tenancy` **v3.10.1** (installed into `/tmp/kb-tenancy` from Packagist, read directly — every claim in §1 cites a file)  
 **Rule:** Design only. Koi migration, model, middleware ya job **implement** nahi kiya gaya — sirf skeleton jahan maanga gaya. Jo cheez package source se verify nahi hui woh **NOT VERIFIED** mark hai.
 
 ---
@@ -13,10 +13,10 @@
 
 Yeh document `02` ke **do decisions badal deta hai**. Baaki sab (`D1`, `D2`, `D5`, §5.5 Step 0) **jaisa hai waisa** hai.
 
-| Decision | Purana (02) | Naya (07) | Wajah |
-| --- | --- | --- | --- |
-| **D3** tenant identification | Subdomain-only `{slug}.mizaanbitserp.com` + wildcard TLS (DNS-01) | **Path-based** `mizaanbitserp.com/{tenant_slug}/...` | Product domain hi central host hai — koi `app.` subdomain nahi, koi wildcard DNS nahi, koi wildcard cert nahi. Ek origin, ek cert, ek deploy |
-| **D4** SSO session | Host-only cookie + one-time `sso_handoffs` token | **Handoff khatam** — same origin par session already maujood hai | Path-based mein subdomain boundary nahi hai, is liye cookie boundary bhi nahi. `sso_handoffs` table **Phase 1 mein nahi banegi** |
+| Decision                     | Purana (02)                                                       | Naya (07)                                                        | Wajah                                                                                                                                        |
+| ---------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D3** tenant identification | Subdomain-only `{slug}.mizaanbitserp.com` + wildcard TLS (DNS-01) | **Path-based** `mizaanbitserp.com/{tenant_slug}/...`             | Product domain hi central host hai — koi `app.` subdomain nahi, koi wildcard DNS nahi, koi wildcard cert nahi. Ek origin, ek cert, ek deploy |
+| **D4** SSO session           | Host-only cookie + one-time `sso_handoffs` token                  | **Handoff khatam** — same origin par session already maujood hai | Path-based mein subdomain boundary nahi hai, is liye cookie boundary bhi nahi. `sso_handoffs` table **Phase 1 mein nahi banegi**             |
 
 **Naya URL shape:**
 
@@ -39,27 +39,29 @@ https://mizaanbitserp.com/profile              → identity (central)
 
 ### 1.1 Composer resolution (dono PHP versions)
 
-| Probe | Command | Result |
-| --- | --- | --- |
-| **PHP 8.5.12**, repo ke andar (locked deps ke saath) | `composer require "stancl/tenancy:^3.10" --dry-run` | ✅ Resolves. `Locking stancl/tenancy (v3.10.1)`, `stancl/jobpipeline (v1.9.0)`, `stancl/virtualcolumn (v1.5.0)`, `facade/ignition-contracts (1.0.2)` — **4 installs, 0 updates, 0 removals** |
-| **PHP 8.3.27**, isolated probe (`/tmp/kb-php83`, `config.platform.php = 8.3.27`, no lock file) | `composer require stancl/tenancy:^3.10 inertiajs/inertia-laravel:^3.5 ...` | ✅ Resolves. `stancl/tenancy (v3.10.1)` ke saath `laravel/framework (v13.42.0)`, `inertiajs/inertia-laravel (v3.7.0)` |
+| Probe                                                                                          | Command                                                                    | Result                                                                                                                                                                                      |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **PHP 8.5.12**, repo ke andar (locked deps ke saath)                                           | `composer require "stancl/tenancy:^3.10" --dry-run`                        | ✅ Resolves. `Locking stancl/tenancy (v3.10.1)`, `stancl/jobpipeline (v1.9.0)`, `stancl/virtualcolumn (v1.5.0)`, `facade/ignition-contracts (1.0.2)` — **4 installs, 0 updates, 0 removals** |
+| **PHP 8.3.27**, isolated probe (`/tmp/kb-php83`, `config.platform.php = 8.3.27`, no lock file) | `composer require stancl/tenancy:^3.10 inertiajs/inertia-laravel:^3.5 ...` | ✅ Resolves. `stancl/tenancy (v3.10.1)` ke saath `laravel/framework (v13.42.0)`, `inertiajs/inertia-laravel (v3.7.0)`                                                                        |
 
 **Do honest caveats:**
 
 1. `composer require --dry-run` **`composer.json` ko likh deta hai** (`./composer.json has been updated`) chahe dry-run ho. Pehle probe mein yeh hua; `git checkout -- composer.json` se revert kiya, md5 `72a0cc2d6580a6d6d536e1a9115ece3f` pehle aur baad mein same. **Isi wajah se 8.3 probe throwaway project mein `config.platform.php` ke saath chalaya gaya**, real repo ko chhue baghair.
 2. 8.3 probe ne `laravel/framework v13.42.0` pick kiya jabke repo `13.38.0` par locked hai — kyunke probe fresh `composer update` tha, lock file nahi thi. Iska matlab: **"stancl Laravel 13.x ke kisi bhi patch par chalta hai"** verified hai, "exactly 13.38.0 par" nahi. Real repo par actual install phir bhi karna hoga (first step of Phase 1).
 
-`composer.json` constraint jo package khud declare karta hai: `illuminate/support: ^10.0|^11.0|^12.0|^13.0` — is liye `02` §5 ka "metadata se hai, install se NOT VERIFIED" ab **closed** hai.
+|                                                                                           |       |       |                                                                                          |
+| ----------------------------------------------------------------------------------------- | ----- | ----- | ---------------------------------------------------------------------------------------- |
+| `composer.json` constraint jo package khud declare karta hai: \`illuminate/support: ^10.0 | ^11.0 | ^12.0 | ^13.0`— is liye`02\` §5 ka "metadata se hai, install se NOT VERIFIED" ab **closed** hai. |
 
 ### 1.2 Path identification — maujood hai, magar teen shartein
 
 Haan, package mein path identification **first-class** hai:
 
-| File | Kya karta hai |
-| --- | --- |
-| `src/Middleware/InitializeTenancyByPath.php` | Route ke pehle parameter se tenant resolve karta hai |
-| `src/Resolvers/PathTenantResolver.php` | `$route->parameter('tenant')` padh kar `tenancy()->find($id)` |
-| `src/Exceptions/RouteIsMissingTenantParameterException.php` | Agar pehla parameter `tenant` na ho |
+| File                                                        | Kya karta hai                                                 |
+| ----------------------------------------------------------- | ------------------------------------------------------------- |
+| `src/Middleware/InitializeTenancyByPath.php`                | Route ke pehle parameter se tenant resolve karta hai          |
+| `src/Resolvers/PathTenantResolver.php`                      | `$route->parameter('tenant')` padh kar `tenancy()->find($id)` |
+| `src/Exceptions/RouteIsMissingTenantParameterException.php` | Agar pehla parameter `tenant` na ho                           |
 
 **Exact behaviour (source se, lines ke saath):**
 
@@ -103,16 +105,17 @@ To Phase 2 mein combined identification **custom code** hoga (§13.2), package s
 
 ### 1.5 Kya override karna padega (4 cheezein, sab verified)
 
-| # | Kya | Kyun | Kahan |
-| --- | --- | --- | --- |
-| **O1** | `SlugPathTenantResolver extends PathTenantResolver` | `find()` `id` se dhoondta hai; humein `slug` chahiye | Container binding: `$this->app->bind(PathTenantResolver::class, SlugPathTenantResolver::class)` — `InitializeTenancyByPath` constructor `PathTenantResolver` type-hint karta hai, is liye subclass inject ho jayega |
-| **O2** | `CacheTenancyBootstrapper` **band** | `CACHE_STORE=file` hai; `stancl\Tenancy\CacheManager::__call()` har cache call par `$this->store()->tags(...)` karta hai, aur `Repository::tags()` (`Repository.php:847-851`) non-taggable store par `BadMethodCallException: This cache store does not support tagging` phainkta hai. **Tests mein `CACHE_STORE=array` hai (taggable), production mein `file` (nahi)** — classic "tests pass, prod 500" trap | `config/tenancy.php` `bootstrappers` se hata dein. Cache scoping manually (§8.2) |
-| **O3** | `FilesystemTenancyBootstrapper` ka `root_override` **khali**, `suffix_storage_path` **false**, `asset_helper_tenancy` **false** | Neeche detail | `config/tenancy.php` |
-| **O4** | `tenancy.routes` **false** | `stancl.tenancy.asset` route `/tenancy/assets/{path?}` hai aur uske controller ka default middleware `InitializeTenancyByDomain` hai (`TenantAssetsController::$tenancyMiddleware`). Path mode mein us route par `{tenant}` parameter hi nahi, is liye `InitializeTenancyByPath` laga bhi nahi sakte. Asset route ka koi matlab nahi bacha | `config/tenancy.php` |
+| #      | Kya                                                                                                                             | Kyun                                                                                                                                                                                                                                                                                                                                                                                                          | Kahan                                                                                                                                                                                                               |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **O1** | `SlugPathTenantResolver extends PathTenantResolver`                                                                             | `find()` `id` se dhoondta hai; humein `slug` chahiye                                                                                                                                                                                                                                                                                                                                                          | Container binding: `$this->app->bind(PathTenantResolver::class, SlugPathTenantResolver::class)` — `InitializeTenancyByPath` constructor `PathTenantResolver` type-hint karta hai, is liye subclass inject ho jayega |
+| **O2** | `CacheTenancyBootstrapper` **band**                                                                                             | `CACHE_STORE=file` hai; `stancl\Tenancy\CacheManager::__call()` har cache call par `$this->store()->tags(...)` karta hai, aur `Repository::tags()` (`Repository.php:847-851`) non-taggable store par `BadMethodCallException: This cache store does not support tagging` phainkta hai. **Tests mein `CACHE_STORE=array` hai (taggable), production mein `file` (nahi)** — classic "tests pass, prod 500" trap | `config/tenancy.php` `bootstrappers` se hata dein. Cache scoping manually (§8.2)                                                                                                                                    |
+| **O3** | `FilesystemTenancyBootstrapper` ka `root_override` **khali**, `suffix_storage_path` **false**, `asset_helper_tenancy` **false** | Neeche detail                                                                                                                                                                                                                                                                                                                                                                                                 | `config/tenancy.php`                                                                                                                                                                                                |
+| **O4** | `tenancy.routes` **false**                                                                                                      | `stancl.tenancy.asset` route `/tenancy/assets/{path?}` hai aur uske controller ka default middleware `InitializeTenancyByDomain` hai (`TenantAssetsController::$tenancyMiddleware`). Path mode mein us route par `{tenant}` parameter hi nahi, is liye `InitializeTenancyByPath` laga bhi nahi sakte. Asset route ka koi matlab nahi bacha                                                                    | `config/tenancy.php`                                                                                                                                                                                                |
 
 **O3 ki tafseel — yeh repo-specific hai aur ghalat config se attachments toot jate hain:**
 
 `config/filesystems.php` mein `local` disk ka root `storage_path('app/private')` hai (`app/private`, `app` **nahi**). Package ka default `root_override.local` `%storage_path%/app/` hai — usay use karne se attachments `storage/app/` mein chale jayenge aur purani files gayab ho jayengi.
+
 
 Package ka **fallback** (`FilesystemTenancyBootstrapper.php:62-70`) exactly woh karta hai jo humein chahiye: agar `root_override` set **na** ho to `$finalPrefix = rtrim($originalRoot,'/').'/'.$suffix`. Is liye:
 
@@ -157,11 +160,11 @@ Aur `config/filesystems.php:16` `default` = `local` hai, is liye `AttachmentCont
 
 | Table | Kyun central | Aaj maujood? |
 | --- | --- | --- |
-| `tenants` | stancl ka core; `id` = ULID = `04` ka `kb_tenant_id` | ❌ naya |
+| `tenants` | stancl ka core; `id` = ULID = `04` ka `kb_tenant_id`. Extra columns: `slug`, `name`, `provisioning_state`, `provisioning_state_at`, `failed_at_state`, `provisioning_error`, `provisioned_at`, `suspended_at`, `entitlements` (JSON) | ❌ naya |
 | `domains` | stancl ka core; Phase 1 mein **istemal nahi** hoga (path-based), Phase 2 mein custom domains | ❌ naya (package ship karta hai) |
-| `users` | **D1** — mirror users central. `App\Models\User extends CoreUser` seam already maujood hai | ✅ `0001_01_01_000000_create_users_table.php` |
+| `users` | **D1** — mirror users central. `App\Models\User extends CoreUser` seam already maujood hai. **Naya column `kb_user_id`** (CP `users.id` = OIDC `sub`, `unique`, nullable sirf break-glass admin ke liye) | ✅ `0001_01_01_000000_create_users_table.php` |
 | `password_reset_tokens` | `users` ke saath | ✅ same migration |
-| `kb_user_tenant` | Kaun user kis tenant ka member hai + local role hint | ❌ naya |
+| `kb_user_tenant` | Kaun user kis tenant ka member hai + CP role hint. Schema §6.6.2. **`user_id` local `users.id` hai, `kb_user_id` CP ka — do alag cheezein** | ❌ naya |
 | `kb_snapshot` | Last good `resolve` response (JSON + etag + fetched_at) | ❌ naya |
 | `kb_oauth_state` | PKCE verifier + `state` | ❌ naya |
 | `webhook_events` | `X-KB-Event-Id` idempotency — tenant resolve se **pehle** dedupe chahiye | ❌ naya |
@@ -170,6 +173,17 @@ Aur `config/filesystems.php:16` `default` = `local` hai, is liye `AttachmentCont
 | `cache`, `cache_locks` | Cache central (dekhein §8.2 — scoping manual) | ✅ |
 | `jobs`, `job_batches`, `failed_jobs` | Worker central context mein chalta hai; payload mein `tenant_id` | ✅ `0001_01_01_000002_create_jobs_table.php` |
 | `personal_access_tokens` | Sanctum — **aaj install nahi hai** (dekhein §8.7) | ❌ n/a |
+
+**Naam ka farq jo confuse karta hai — isay aik dafa likh dein:**
+
+| Column | Matlb |
+| --- | --- |
+| `users.kb_user_id` | **CP** ka `users.id` (OIDC `sub`). Product ke andar identity ki asli pehchan |
+| `users.id` | Product ka local auto-increment id — `model_has_roles`, `audit_logs.user_id` waghera isi par |
+| `kb_user_tenant.user_id` | Product ka **local** `users.id` |
+| `kb_user_tenant.tenant_id` | `tenants.id` (ULID) |
+
+`02` §5.1 ne pivot ko "`kb_user_tenant`" kaha magar column name nahi diya. Yahan `user_id` (local) chuna gaya hai kyunke pivot central DB mein hai aur `users` bhi central — is liye **asli FK** ban sakta hai (cross-DB nahi).
 
 **`sso_handoffs` yahan nahi hai.** D4 supersede ho gaya — path-based mein handoff ki zaroorat nahi (§3.5).
 
@@ -256,6 +270,8 @@ Aur `TenancyEnded` par wapas default. Yeh `TenancyServiceProvider` ke event list
 `SESSION_DRIVER=file` aur `CACHE_STORE=file` aaj hain — in par `connection` ka sawal nahi aata, magar `storage_path()` central hai (`suffix_storage_path=false`) is liye file store bhi central hai. ✅
 
 **Yeh pinning ek test se enforce hogi** (§10.5): tenant context mein `config('session.connection')` aur `config('queue.connections.database.connection')` non-null hone chahiye.
+
+
 
 ---
 
@@ -450,7 +466,7 @@ sequenceDiagram
     autonumber
     actor U as User browser
     participant P as mizaanbitserp.com
-    participant KB as KhattakBits OAuth2
+    participant KB as KhattakBits OAuth2 + API
     participant DB as Central DB
 
     U->>P: GET /acme/dashboard (koi session nahi)
@@ -460,15 +476,27 @@ sequenceDiagram
     U->>KB: login
     KB-->>U: 302 /auth/kb/callback?code&state
     U->>P: GET /auth/kb/callback (central, tenancy nahi)
-    P->>KB: POST /oauth/token, GET /oauth/userinfo, resolve
-    P->>DB: upsert users + kb_user_tenant
-    alt return_to maujood aur member hai
+
+    Note over P,KB: Membership sirf KB ke data se — URL se kabhi nahi
+    P->>KB: POST /oauth/token (code + verifier)
+    P->>KB: GET /oauth/userinfo (Bearer)
+    KB-->>P: sub, email, name, products[], kb_token_version
+    P->>KB: GET /api/v1/users/tenants (Bearer)
+    KB-->>P: [{tenant_id, slug, product_key, role, status}]
+    P->>DB: upsert users (kb_user_id = sub)
+    P->>DB: reconcile kb_user_tenant (insert/update/revoke)
+
+    Note over P,DB: return_to sirf PATH hai, membership ka source nahi
+    alt return_to valid + us tenant ka member
         P-->>U: 302 /acme/dashboard (same-origin session already set)
     else return_to nahi / member nahi
-        P-->>U: 302 /acme/dashboard (default) ya tenant picker
+        P-->>U: 302 /{single-slug}/dashboard ya tenant picker
     end
     U->>P: GET /acme/dashboard (session valid, membership pass)
 ```
+
+**Diagram ka ahem hissa:** `GET /api/v1/users/tenants` woh **naya** CP endpoint hai jo membership ka authoritative source hai (§3.6.1). `return_to` ka slug sirf **destination** chunta hai — agar user us tenant ka member nahi, to redirect picker par jata hai, `kb_user_tenant` row **kabhi** URL se nahi banti.
+
 
 **Kya badla `02` se:**
 
@@ -480,6 +508,138 @@ sequenceDiagram
 | Tenant switch | naya session + handoff | **bas URL badlo** — session same |
 | `SESSION_DOMAIN` | khali (host-only) | khali (ek hi host, koi farq nahi) |
 | Cross-tenant blast radius | ek tenant | **poora product** — yeh qeemat hai (§4) |
+
+#### 3.6.1 `kb_user_tenant` ka source of truth — sirf KhattakBits data
+
+Yeh **sab se zyada ghalat samjhi jane wali** jagah hai. Rule bilkul sakht hai:
+
+> **`kb_user_tenant` rows sirf KhattakBits ke jawab se bantee hain. URL slug, `return_to`, product access, ya `users.products[]` — inmein se koi bhi akela kaafi nahi.**
+
+**Authoritative source: `GET /api/v1/users/tenants`** (naya CP endpoint, `05` §1.2 mein add hoga — §11.3).
+
+```
+GET /api/v1/users/tenants
+Authorization: Bearer <user access token>
+Accept: application/json
+
+200
+{
+  "schema": 1,
+  "tenants": [
+    { "tenant_id": "01JQ8Z3K7M4X2V9B5N1C6D0RTA", "slug": "acme",
+      "product_key": "mizaan", "role": "owner", "status": "active" },
+    { "tenant_id": "01JQ8Z4N2P6R3T9V5W1X7Y0B2C", "slug": "beta",
+      "product_key": "mizaan", "role": "member", "status": "read_only" }
+  ],
+  "etag": "W/\"a71c..."
+}
+```
+
+CP isay **teen** tables se banata hai (`04` §1.3):
+
+```sql
+SELECT tr.kb_tenant_id  AS tenant_id,
+       tr.slug,
+       p.key            AS product_key,
+       upa.role,                       -- owner|admin|member|billing|viewer
+       tr.status
+FROM   tenants_registry tr
+JOIN   products p            ON p.id = tr.product_id
+JOIN   kb_user_product_access upa
+       ON upa.product_id = tr.product_id AND upa.user_id = :kb_user_id
+WHERE  tr.deleted_at IS NULL
+  AND  tr.status <> 'archived'
+  AND  upa.revoked_at IS NULL
+```
+
+**Teen cheezein jo yahan jaan boojh kar shamil hain:**
+
+1. **`tenants_registry`** — tenant ka wajood. Product access ho magar registry row na ho → koi membership nahi (tenant abhi provision hi nahi hua).
+2. **`kb_user_product_access`** — kaun is product ko khol sakta hai. Yeh **zaroori** hai magar **kaafi nahi**: `04` §1.3 line 430 saaf kehta hai ek user product access rakh sakta hai magar kisi tenant ka owner na ho (e.g. billing contact).
+3. **`role`** — CP ka product-level role. Yeh tenant DB ke role ka **hint** hai, authority nahi (`05` §1.8 line 393).
+
+**Jo cheezein source hain hi nahi (aur kabhi nahi honi chahiye):**
+
+| Cheez | Kyun nahi | Agar use kiya to |
+| --- | --- | --- |
+| **URL ka `{tenant}` slug** | User khud control karta hai | Koi bhi `/any-slug/dashboard` hit karke us tenant mein ghus jata (agar row banti) |
+| **`return_to` ka path** | URL se aata hai | Wohi masla, `return_to=/beta/dashboard` |
+| **`userinfo.products[]` akela** | Product-level hai, tenant-level nahi | Product access wala har user har tenant ka member ban jata |
+| **`resolve` ka `tenant_id` akela** | Resolve **authorized** hai (`tenant_not_in_scope` deta hai), magar woh per-tenant call hai — pehle pata hona chahiye kaunse tenants | Chicken-and-egg; aur `resolve` membership list nahi deta |
+| **`users.email` match** | Email badalti hai, duplicate ho sakti hai | Account takeover |
+
+**Reconciliation algorithm (idempotent, har SSO login par):**
+
+```php
+// app/Support/Identity/ReconcileMemberships.php
+final class ReconcileMemberships
+{
+    /**
+     * @param  array<int, array{tenant_id:string, slug:string, product_key:string, role:string, status:string}>  $remote
+     */
+    public function run(User $user, array $remote): void
+    {
+        $seen = [];
+
+        DB::connection('central')->transaction(function () use ($user, $remote, &$seen) {
+            foreach ($remote as $t) {
+                // 1) Tenant hamare paas maujood hai? (provisioning ho chuki?)
+                $tenant = Tenant::query()->whereKey($t['tenant_id'])->first();
+
+                if (! $tenant) {
+                    // CP kehta hai tenant hai magar yahan row nahi — provisioning
+                    // pending hai. Membership abhi na banao, warna /{slug} 404 dega
+                    // magar user ko "member" dikhega.
+                    continue;
+                }
+
+                // 2) Slug CP ka authoritative hai — mismatch = data drift, alert
+                if ($tenant->slug !== $t['slug']) {
+                    report(new \RuntimeException("Slug drift: local [{$tenant->slug}] vs CP [{$t['slug']}] for {$tenant->id}"));
+                    continue;   // drift par membership na banao — admin ka faisla
+                }
+
+                $seen[] = $tenant->id;
+
+                // 3) Upsert — idempotent
+                DB::connection('central')->table('kb_user_tenant')->upsert(
+                    [[
+                        'user_id'      => $user->id,
+                        'tenant_id'    => $tenant->id,
+                        'role_hint'    => $t['role'],
+                        'source'       => 'sso',
+                        'synced_at'    => now(),
+                        'revoked_at'   => null,
+                        'created_at'   => now(),
+                        'updated_at'   => now(),
+                    ]],
+                    ['user_id', 'tenant_id'],
+                    ['role_hint', 'source', 'synced_at', 'revoked_at', 'updated_at'],
+                );
+            }
+
+            // 4) Jo CP ne nahi bheja — revoke (delete nahi, audit ke liye)
+            DB::connection('central')->table('kb_user_tenant')
+                ->where('user_id', $user->id)
+                ->when($seen !== [], fn ($q) => $q->whereNotIn('tenant_id', $seen))
+                ->whereNull('revoked_at')
+                ->update(['revoked_at' => now(), 'updated_at' => now()]);
+        });
+    }
+}
+```
+
+**`revoked_at` kyun, delete nahi:** membership revoke hona audit-worthy hai (`security_events` mein `membership.revoked`). Aur agar CP ghalti se user ko list se gira de, `revoked_at` set hota hai — dobara aane par wapas `null` ho jata hai, koi data loss nahi.
+
+**Agar `/api/v1/users/tenants` fail ho (CP down):**
+
+| Situation | Behaviour |
+| --- | --- |
+| CP 5xx / timeout | **Login fail karo** (`503` friendly page). Purani memberships **na** chhedo — stale data se authorization decision lena khatarnak hai |
+| CP 200 magar khaali list | Sab memberships `revoked_at = now()`. User login karega magar kisi tenant mein nahi ja sakta (picker khaali) |
+| CP 401 (token invalid) | Session kill, `/login` par wapas |
+
+**`EnsureTenantMembership` (§3.8) isi table par chalta hai** — yaani SSO ke waqt jo likha gaya, har request par wohi check hota hai. Do jagah **do alag** logic nahi hai.
 
 **`return_to` validation:** `AuthController::isSafeRedirect()` (`core/src/Http/Controllers/AuthController.php:47-64`) aaj relative paths allow karta hai (`str_starts_with($target, '/')` → `true`). Path-based mein yeh **kaafi hai**, magar ek shart add karni hogi: `return_to` ka pehla segment **reserved slug na ho** aur **valid tenant slug ho**, warna user `/login` par redirect loop mein phans sakta hai (`return_to=/login` → login → `/login` → ...). Fix: `return_to` ko `/login`, `/forgot-password`, `/reset-password`, `/logout` reject karna.
 
@@ -514,8 +674,9 @@ final class EnsureTenantMembership
 
         $isMember = DB::connection('central')
             ->table('kb_user_tenant')
-            ->where('kb_user_id', $user->id)
+            ->where('user_id', $user->id)          // local users.id, CP id nahi
             ->where('tenant_id', $tenant->getTenantKey())
+            ->whereNull('revoked_at')
             ->exists();
 
         if (! $isMember) {
@@ -533,7 +694,7 @@ final class EnsureTenantMembership
 
 **`404` kyun, `403` nahi:** `403` ka matlab "resource maujood hai magar aap ko haq nahi" — yeh tenant ke existence ka confirmation hai. `404` se attacker ko pata nahi chalta ke `/beta` exist karta hai ya nahi.
 
-**Ek query per request.** `kb_user_tenant` par `UNIQUE(kb_user_id, tenant_id)` index hoga, is liye yeh primary-key lookup hai. Cache nahi karenge — Phase 1 mein simplicity > micro-optimization, aur cache invalidate karna (membership revoke) security-sensitive hai.
+**Ek query per request.** `kb_user_tenant` par `UNIQUE(user_id, tenant_id)` index hoga, is liye yeh primary-key lookup hai. Cache nahi karenge — Phase 1 mein simplicity > micro-optimization, aur cache invalidate karna (membership revoke) security-sensitive hai.
 
 **`tenant()` `null` kab hota hai:** `InitializeTenancyByPath` fail ho jaye (`onFail`) to. Us case mein hum `404` chahte hain, exception nahi:
 
@@ -591,6 +752,8 @@ Path-based ka poora faida (ek deploy, ek cert, ek session) **ek hi qeemat** par 
 
 ### 5.1 Hard-coded absolute paths (verified counts)
 
+|  |  |  |  |  |  |  |  |  |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 Grep pattern: `(href|to|visit|action|url|push|replace|location.href|location.assign)\s*[=(:]\s*['"]/...`
 
 | Folder | Files | Hits | Central (badalna **nahi**) | Tenant (badalna hai) |
@@ -620,6 +783,7 @@ Grep pattern: `(href|to|visit|action|url|push|replace|location.href|location.ass
 | `Pages/Settings/EmailAccounts/Index.vue:49,96` | `/settings/email-accounts/create` | **tenant** |
 | `Pages/Settings/Roles/Index.vue:41,66` | `/settings/roles/create` | **tenant** |
 | `Pages/Settings/Users/Index.vue:62,104` | `/settings/users/create` | **tenant** |
+
 
 **`khattakbits-ui` ke 6 hits — sab central:** `useServerList.js:37`, `ui/DocumentActivity.vue:32`, `ui/FileAttachments.vue:33`, `ui/Select.vue:64` (`/login` — 401 par redirect), `layouts/UserMenu.vue:40` (`/profile`), `:45` (`/logout`). **UI package mein zero tenant paths** — is package ko codemod ki zaroorat **nahi**, sirf `tenantUrl()` helper export karna hai.
 
@@ -829,26 +993,51 @@ php artisan route:list --json | jq -r '.[] | select(.uri | startswith("{tenant}"
 Yeh list **sirf** central routes dikhani chahiye. Koi `settings/users` bina `{tenant}` ke aaya → ghalti.
 ---
 
+
 ## 6. Tenant provisioning — queued, idempotent, rollback-safe
 
-### 6.1 State machine (column: `tenants.provisioning_state`)
+### 6.1 State machine (columns: `tenants.provisioning_state`, `failed_at_state`, `provisioning_state_at`)
 
 ```
-pending ──▶ creating_db ──▶ migrating ──▶ seeding ──▶ ready
-   │             │              │            │
-   └─────────────┴──────────────┴────────────┴──▶ failed
+pending
+   │
+   ▼
+creating_db ──▶ migrating ──▶ seeding ──▶ owner_mapping ──▶ ready
+   │               │             │              │
+   └───────────────┴─────────────┴──────────────┴──▶ failed
+                                                      │
+                                    failed_at_state = jis step par toota
+                                    --retry ──▶ usi step se resume
 ```
 
-| State | Matlab | Dobara chalne par |
+| State | Matlab | Dobara chalne par (resume) |
 | --- | --- | --- |
 | `pending` | Row bani, DB nahi | `createDatabase` |
 | `creating_db` | DB ban rahi hai | `databaseExists()` check → skip ya create |
 | `migrating` | Migrations chal rahi hain | `tenants:migrate` idempotent hai (migrations table) |
 | `seeding` | Seeders chal rahe hain | Seeder idempotent hona chahiye (`updateOrCreate`) |
+| **`owner_mapping`** | DB tayyar; ab central mirror user + pivot + tenant `owner` role (§6.6) | Teenon steps idempotent — `firstOrNew` / `upsert` / `syncWithoutDetaching` |
 | `ready` | Done | No-op |
-| `failed` | Kuch toota | Manual `tenants:provision --retry` |
+| `failed` | Kuch toota | `failed_at_state` se **resume**, shuru se nahi |
 
-`provisioning_state` `string(20)` hai, `ENUM` nahi (MySQL/SQLite portability, `06` §0.1 ka wohi rule).
+**Teen columns jo is state machine ke liye lazmi hain:**
+
+```sql
+-- tenants table (central)
+provisioning_state     VARCHAR(20)  NOT NULL DEFAULT 'pending'
+provisioning_state_at  TIMESTAMP    NULL      -- har transition par set — sweeper isi par chalta hai
+failed_at_state        VARCHAR(20)  NULL      -- kis state par toota; retry yahan se resume karega
+provisioning_error     VARCHAR(500) NULL
+provisioning_attempts  TINYINT UNSIGNED NOT NULL DEFAULT 0
+provisioned_at         TIMESTAMP    NULL
+suspended_at           TIMESTAMP    NULL
+```
+
+**`provisioning_state_at` `updated_at` se alag kyun:** `updated_at` har `update()` par badalta hai — admin ke notes edit karne se bhi. Sweeper ko **sirf** state transition ka waqt chahiye. Alag column hone se "15 minute se atka hua hai" ka matlab unambiguous hai.
+
+**`failed_at_state` kyun (resume ke liye):** agar `owner_mapping` par fail hua, to `migrating` dobara chalana bekaar hai (migrations already applied) aur mehnga hai. `failed_at_state` retry ko seedha usi step par le jata hai. `provisioning_state` `failed` rehta hai — `failed_at_state` uske saath chalta hai.
+
+`provisioning_state` `string(20)` hai, `ENUM` nahi (MySQL/SQLite portability, `06` §0.1 ka wohi rule). `owner_mapping` 13 chars hai — 20 mein aaram se.
 
 ### 6.2 Job skeleton
 
@@ -868,13 +1057,15 @@ final class ProvisionTenant implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 1;          // retry nahi — state machine khud resume karta hai
-    public int $timeout = 300;      // migrations + seeders
+    public int $timeout = 300;      // migrations + seeders + owner mapping
     public bool $failOnTimeout = true;
     public bool $deleteWhenMissingModels = true;
 
     public function __construct(
         public string $tenantId,
         public string $slug,
+        /** CP ka owner — `subscription.created` webhook se (§6.6.1) */
+        public array $owner,        // ['kb_user_id' => 47, 'email' => '...', 'name' => '...']
     ) {
         // provisioning queue CENTRAL hai — payload mein tenant_id na jaye
         $this->onConnection('central')->onQueue('provisioning');
@@ -892,24 +1083,34 @@ final class ProvisionTenant implements ShouldQueue
             return;                 // idempotent
         }
 
-        $provisioner->run($tenant);
+        $provisioner->run($tenant, $this->owner);
     }
 
     public function failed(\Throwable $e): void
     {
-        Tenant::query()->whereKey($this->tenantId)->update([
-            'provisioning_state' => 'failed',
-            'provisioning_error' => mb_substr($e->getMessage(), 0, 500),
-        ]);
+        // Provisioner khud state set karta hai; yeh sirf safety net hai
+        // (e.g. job timeout, worker kill — jab catch block chala hi na ho)
+        Tenant::query()
+            ->whereKey($this->tenantId)
+            ->where('provisioning_state', '!=', 'ready')
+            ->whereNull('failed_at_state')
+            ->update([
+                'failed_at_state' => \DB::raw('provisioning_state'),
+                'provisioning_state' => 'failed',
+                'provisioning_error' => mb_substr($e->getMessage(), 0, 500),
+                'provisioning_state_at' => now(),
+            ]);
 
         // admin alert — 06 §2.8.4 wala pattern (email template `tenant_provision_failed`)
     }
 }
 ```
 
-**`onConnection('central')` kyun:** `QueueTenancyBootstrapper::getPayload()` `config("queue.connections.$connection.central")` check karta hai (`QueueTenancyBootstrapper.php:150-153`) — `true` hone par `tenant_id` payload mein **nahi** dalta. Provisioning job central context mein chalti hai, is liye yeh lazmi hai. `config/queue.php` ke `database` connection mein `'central' => true` add karna hoga **sirf** provisioning ke liye — ya alag connection `provisioning` banayein jo `database` ko mirror kare aur `'central' => true` rakhe. **Behtar doosra:** kyunke tenant jobs bhi database connection use karte hain aur unhein `central` flag nahi chahiye.
+**`whereNull('failed_at_state')` kyun:** agar `Provisioner` ne already `failed_at_state` set kar diya hai, to `failed()` usay **overwrite na kare** — warna asli failure point gum ho jata hai.
 
-### 6.3 Provisioner skeleton
+**`\DB::raw('provisioning_state')`:** column-to-column copy. MySQL aur SQLite dono mein chalta hai.
+
+### 6.3 Provisioner skeleton — `failed_at_state` se resume
 
 ```php
 namespace App\Support\Tenancy;
@@ -920,90 +1121,466 @@ use Throwable;
 
 final class TenantProvisioner
 {
-    public function run(Tenant $tenant): void
+    /** @var string[] */
+    private const ORDER = ['pending', 'creating_db', 'migrating', 'seeding', 'owner_mapping', 'ready'];
+
+    public function __construct(private TenantOwnerMapper $ownerMapper) {}
+
+    /**
+     * @param  array{kb_user_id:int, email:string, name:string}  $owner
+     */
+    public function run(Tenant $tenant, array $owner): void
     {
+        // Resume point: agar failed tha to failed_at_state se, warna current state se
+        $from = $tenant->failed_at_state ?: $tenant->provisioning_state;
+
+        if (! in_array($from, self::ORDER, true)) {
+            throw new \RuntimeException("Unknown provisioning state [{$from}] for tenant {$tenant->getTenantKey()}.");
+        }
+
+        // Retry par failed_at_state clear karo — warna next failure purana point dikhayega
+        if ($tenant->failed_at_state !== null) {
+            $tenant->update(['failed_at_state' => null, 'provisioning_error' => null]);
+        }
+
+        $tenant->update(['provisioning_attempts' => $tenant->provisioning_attempts + 1]);
+
         try {
-            if (in_array($tenant->provisioning_state, ['pending', 'creating_db'], true)) {
-                $tenant->update(['provisioning_state' => 'creating_db']);
-
-                $manager = $tenant->database()->manager();
-                if (! $manager->databaseExists($name = $tenant->database()->getName())) {
-                    $manager->createDatabase($tenant);
+            foreach (self::ORDER as $state) {
+                if ($this->rank($state) < $this->rank($from)) {
+                    continue;                       // pehle se ho chuka — skip
                 }
 
-                $tenant->update(['provisioning_state' => 'migrating']);
-            }
+                if ($state === 'ready') {
+                    $tenant->update([
+                        'provisioning_state'     => 'ready',
+                        'provisioning_state_at'  => now(),
+                        'provisioned_at'         => now(),
+                        'failed_at_state'        => null,
+                    ]);
 
-            if ($tenant->provisioning_state === 'migrating') {
-                $exit = Artisan::call('tenants:migrate', [
-                    '--tenants' => [$tenant->getTenantKey()],
-                    '--force'   => true,
-                ]);
-
-                if ($exit !== 0) {
-                    throw new \RuntimeException("tenants:migrate failed (exit {$exit}): ".Artisan::output());
+                    return;
                 }
 
-                $tenant->update(['provisioning_state' => 'seeding']);
-            }
-
-            if ($tenant->provisioning_state === 'seeding') {
-                $exit = Artisan::call('tenants:seed', [
-                    '--tenants' => [$tenant->getTenantKey()],
-                    '--class'   => \Database\Seeders\TenantSeeder::class,
-                    '--force'   => true,
-                ]);
-
-                if ($exit !== 0) {
-                    throw new \RuntimeException("tenants:seed failed (exit {$exit}): ".Artisan::output());
-                }
-
-                $tenant->update([
-                    'provisioning_state' => 'ready',
-                    'provisioned_at' => now(),
-                ]);
+                $this->transition($tenant, $state);
+                $this->{"step".str_replace('_', '', ucwords($state, '_')}($tenant, $owner);
             }
         } catch (Throwable $e) {
             $tenant->update([
-                'provisioning_state' => 'failed',
-                'provisioning_error' => mb_substr($e->getMessage(), 0, 500),
+                'provisioning_state'    => 'failed',
+                'failed_at_state'       => $tenant->provisioning_state === 'failed'
+                    ? $tenant->failed_at_state          // already set by transition()
+                    : $tenant->provisioning_state,
+                'provisioning_state_at' => now(),
+                'provisioning_error'    => mb_substr($e->getMessage(), 0, 500),
             ]);
 
             throw $e;
         }
     }
+
+    private function transition(Tenant $tenant, string $state): void
+    {
+        $tenant->update([
+            'provisioning_state'    => $state,
+            'provisioning_state_at' => now(),
+        ]);
+    }
+
+    private function rank(string $state): int
+    {
+        return array_search($state, self::ORDER, true);
+    }
+
+    // ── steps ────────────────────────────────────────────────────────────
+
+    private function stepCreatingDb(Tenant $tenant, array $owner): void
+    {
+        $manager = $tenant->database()->manager();
+
+        if (! $manager->databaseExists($tenant->database()->getName())) {
+            $manager->createDatabase($tenant);      // privileged credential — §10.2
+        }
+    }
+
+    private function stepMigrating(Tenant $tenant, array $owner): void
+    {
+        $exit = Artisan::call('tenants:migrate', [
+            '--tenants' => [$tenant->getTenantKey()],
+            '--force'   => true,
+        ]);
+
+        if ($exit !== 0) {
+            throw new \RuntimeException("tenants:migrate failed (exit {$exit}): ".Artisan::output());
+        }
+    }
+
+    private function stepSeeding(Tenant $tenant, array $owner): void
+    {
+        $exit = Artisan::call('tenants:seed', [
+            '--tenants' => [$tenant->getTenantKey()],
+            '--class'   => \Database\Seeders\TenantSeeder::class,
+            '--force'   => true,
+        ]);
+
+        if ($exit !== 0) {
+            throw new \RuntimeException("tenants:seed failed (exit {$exit}): ".Artisan::output());
+        }
+    }
+
+    private function stepOwnerMapping(Tenant $tenant, array $owner): void
+    {
+        $this->ownerMapper->map($tenant, $owner);   // §6.6
+    }
 }
+```
+
+**`$this->{"step..."}` dynamic call ke bajaye** production code mein explicit `match` behtar hai (IDE/static analysis), magar yahan state machine ka pattern dikhane ke liye chalega. Phase 1 implementation mein:
+
+```php
+match ($state) {
+    'creating_db'   => $this->stepCreatingDb($tenant, $owner),
+    'migrating'     => $this->stepMigrating($tenant, $owner),
+    'seeding'       => $this->stepSeeding($tenant, $owner),
+    'owner_mapping' => $this->stepOwnerMapping($tenant, $owner),
+};
 ```
 
 ### 6.4 Rollback — kya **nahi** karna
 
 | Ghalat | Sahi | Wajah |
 | --- | --- | --- |
-| Fail par `dropDatabase()` | **DB chhoro**, `failed` mark karo | Migrations aadhi chal chuki hain, seeders ne data dala ho sakta hai. Drop karne se debugging impossible ho jati hai — aur agar provisioning dobara chali to fresh start ho jayega, jo theek hai |
+| Fail par `dropDatabase()` | **DB chhoro**, `failed` + `failed_at_state` mark karo | Migrations aadhi chal chuki hain, seeders ne data dala ho sakta hai. Drop karne se debugging impossible ho jati hai — aur `--retry` resume kar sakta hai |
 | Automatic retry (`$tries = 3`) | `$tries = 1` + manual `--retry` | Retry 3 dafa wohi fail karega; 3 dafa aadhi-migrated DB banayega. State machine resume karta hai, blind retry nahi |
 | `tenants:migrate` fail par rollback | `tenants:rollback` **nahi** | Rollback bhi fail ho sakta hai; failure surface bara hota hai. `failed` state + admin ka faisla |
-| Tenant ko `active` mark karna `ready` se pehle | `ready` ke baad hi `subscription`/`active` | Warna user aisi tenant mein login karega jahan tables nahi hain |
+| Tenant ko `active` mark karna `ready` se pehle | `ready` ke baad hi `subscription`/`active` | Warna user aisi tenant mein login karega jahan tables nahi hain, ya jahan uska owner role nahi hai |
+| `failed_at_state` clear kiye baghair retry | Retry se pehle clear karo | Warna agli failure purana point dikhayegi aur resume ghalat jagah se hoga |
 
-**`tenants:destroy` (explicit command, admin only):**
+**`tenants:provision` command (retry):**
+
+```php
+// app/Console/Commands/ProvisionTenantCommand.php
+final class ProvisionTenantCommand extends Command
+{
+    protected $signature = 'tenants:provision
+                            {tenant : tenants.id (ULID)}
+                            {--retry : failed_at_state se resume karo}
+                            {--owner-email= : owner override (CP down ho to)}
+                            {--owner-id= : CP kb_user_id}';
+
+    public function handle(TenantProvisioner $provisioner): int
+    {
+        $tenant = Tenant::query()->findOrFail($this->argument('tenant'));
+
+        if ($tenant->provisioning_state === 'ready' && ! $this->option('retry')) {
+            $this->info('Tenant already ready.');
+            return self::SUCCESS;
+        }
+
+        if ($tenant->provisioning_state === 'failed' && ! $this->option('retry')) {
+            $this->error("Tenant failed at [{$tenant->failed_at_state}]. Use --retry to resume.");
+            return self::FAILURE;
+        }
+
+        $owner = $this->resolveOwner($tenant);   // §6.6.1 — CP se, ya --owner-* se
+
+        $provisioner->run($tenant, $owner);
+
+        $this->info("Tenant {$tenant->slug} is ready.");
+
+        return self::SUCCESS;
+    }
+}
+```
+
+**`tenants:destroy` (explicit command, admin only, **privileged credential**):**
 
 ```bash
 php artisan tenants:destroy {tenant} --drop-db --confirm={slug}
 ```
 
-`--confirm={slug}` lazmi — typo se poora tenant udne se bachata hai. `--drop-db` ke baghair sirf row soft-delete hoti hai (`tenants.deleted_at`), DB rehti hai (recovery ke liye 30 din, `04` ke retention pattern par).
+`--confirm={slug}` lazmi — typo se poora tenant udne se bachata hai. `--drop-db` ke baghair sirf row soft-delete hoti hai (`tenants.deleted_at`), DB rehti hai (recovery ke liye 30 din, `04` ke retention pattern par). `DROP DATABASE` **sirf** `provision` connection par chalta hai (§10.2) — app ka credential yeh kar hi nahi sakta.
 
-### 6.5 Trigger points
+### 6.5 Stuck-provisioning sweeper
+
+Ek job jo beech mein mar jaye (worker kill, deploy restart, OOM) — us case mein na `catch` chalta hai na `failed()`, aur row hamesha `migrating` par phansi rehti hai. Koi retry nahi, koi alert nahi.
+
+```php
+// app/Console/Commands/SweepStuckProvisions.php
+final class SweepStuckProvisions extends Command
+{
+    protected $signature = 'tenants:sweep-stuck {--minutes=15} {--dry-run}';
+
+    /** @var string[] */
+    private const IN_FLIGHT = ['creating_db', 'migrating', 'seeding', 'owner_mapping'];
+
+    public function handle(): int
+    {
+        $cutoff = now()->subMinutes((int) $this->option('minutes'));
+
+        $stuck = Tenant::query()
+            ->whereIn('provisioning_state', self::IN_FLIGHT)
+            ->where('provisioning_state_at', '<', $cutoff)
+            ->get();
+
+        if ($stuck->isEmpty()) {
+            return self::SUCCESS;
+        }
+
+        foreach ($stuck as $tenant) {
+            $this->warn(sprintf(
+                '%s (%s) stuck in [%s] since %s',
+                $tenant->slug, $tenant->id, $tenant->provisioning_state,
+                $tenant->provisioning_state_at?->toIso8601String() ?? 'unknown',
+            ));
+
+            if ($this->option('dry-run')) {
+                continue;
+            }
+
+            $tenant->update([
+                'failed_at_state'       => $tenant->provisioning_state,   // resume yahan se
+                'provisioning_state'    => 'failed',
+                'provisioning_state_at' => now(),
+                'provisioning_error'    => 'Stuck in ['.$tenant->provisioning_state.'] for more than '
+                    .$this->option('minutes').' minutes — swept by tenants:sweep-stuck.',
+            ]);
+
+            event(new TenantProvisionStuck($tenant));
+        }
+
+        // Ek hi digest alert — N emails nahi (06 §2.8.4 ka digest pattern)
+        Notification::route('mail', config('khattakbits.ops_email'))
+            ->notify(new StuckProvisionsDigest($stuck));
+
+        return self::SUCCESS;
+    }
+}
+```
+
+**Schedule (`routes/console.php`):**
+
+```php
+Schedule::command('tenants:sweep-stuck --minutes=15')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
+```
+
+**`withoutOverlapping()` yahan theek hai** (§8.5 mein `tenants:run` par nahi lagaya) — yeh command idempotent hai aur dobara chalne se nuqsan nahi, magar overlap se duplicate alerts jate hain. `withoutOverlapping` ke liye cache lock chahiye — `file` store par `Cache::lock()` **kaam karta hai** (file store `LockProvider` implement karta hai), `onOneServer` nahi karta. Is liye `withoutOverlapping` ✅, `onOneServer` ❌.
+
+**15 minute ka number kahan se:** `$timeout = 300` (5 min) × 3 = 15 min. Agar timeout se pehle job khatam ho jati hai to state aage badh jati hai aur `provisioning_state_at` refresh ho jata hai — sweeper usay nahi pakadta. Sirf woh rows pakadta hai jo **transition ke baghair** 15 min se padi hain.
+
+**Sweeper `--dry-run` kyun:** pehle hafte production mein sirf log karein, phir enable karein. Agar koi step legitimately 15 min se zyada leta hai (bara seed), to number barhayein — `failed_at_state` ghalat set karna retry ko ghalat jagah se shuru karega.
+
+**Sweeper ka `failed_at_state` semantics:** woh state jahan **abhi phansa hua hai** wohi resume point hai. Yeh exactly wohi hai jo `Provisioner` ke catch block mein hota hai — dono consistent hain.
+
+### 6.6 Owner mapping — jo missing tha
+
+Provisioning ke baad teen cheezein **lazmi** hain, warna tenant `ready` hone ke bawajood bekaar hai: koi owner nahi, koi membership nahi, koi `owner` role nahi. User login karega, picker khaali milega, ya `/acme/dashboard` par `404`.
+
+#### 6.6.1 Owner kahan se aata hai
+
+`tenants_registry.owner_user_id` **CP ka** `users.id` hai (`04` §1.3 line 210). Product usay **do** jagah se le sakta hai:
+
+| Source | Kab | Payload |
+| --- | --- | --- |
+| **`subscription.created` webhook** (primary) | Provisioning trigger | `data.tenant.owner = { kb_user_id, email, name }` |
+| **`GET /api/v1/subscriptions/resolve`** (fallback) | Re-provision / DB restore / webhook miss | `tenant.owner = { kb_user_id, email, name }` |
+
+**Yeh aaj dono jagah maujood nahi hain.** `05` §4.1 ke mutabiq `subscription.created` ka `data` sirf `subscription_id`, `status`, `plan_key`, `seats`, `period` deta hai — **owner nahi**. `resolve` bhi nahi deta. Yeh **cross-doc gap** hai, `§11.3` mein listed.
+
+**Jab tak CP woh field nahi bhejta, product ke paas owner ka koi bharosa mand source nahi hai.** Aur owner ko **URL se ya `users.email` match se** nikalna mana hai — email badalti hai, aur pehla login hone se pehle `users` row exist hi nahi karti.
+
+```php
+// app/Support/Tenancy/TenantOwnerResolver.php
+final class TenantOwnerResolver
+{
+    /**
+     * @return array{kb_user_id:int, email:string, name:string}
+     */
+    public function resolve(string $tenantId): array
+    {
+        // 1) Webhook payload se aaya hua (kb_snapshot mein frozen)
+        $snapshot = KbSnapshot::query()->where('tenant_id', $tenantId)->first();
+
+        if ($owner = ($snapshot?->payload['tenant']['owner'] ?? null)) {
+            return $owner;
+        }
+
+        // 2) CP se live
+        $res = Http::withToken(KbClient::token())
+            ->acceptJson()
+            ->get(config('khattakbits.cp_url').'/api/v1/subscriptions/resolve', ['tenant_id' => $tenantId]);
+
+        if ($res->successful() && ($owner = $res->json('tenant.owner'))) {
+            return $owner;
+        }
+
+        // 3) Kuch nahi mila — provisioning yahin rukti hai, guess nahi
+        throw new \RuntimeException(
+            "Owner for tenant [{$tenantId}] could not be resolved from CP. "
+            .'Re-dispatch with --owner-id / --owner-email, or fix the CP payload (07 §11.3).'
+        );
+    }
+}
+```
+
+**`users.email` se match kyun nahi:** agar `owner@customer.com` abhi login nahi hua to `users` row nahi hai — mapping fail. Aur agar match kar bhi jaye, to email change hone par mapping tootegi, aur duplicate email par galat user ko ownership milegi. Owner **CP ke `kb_user_id` se** aata hai, email sirf **display + mirror user banane** ke liye.
+
+**Code mein teen naye naam (illustrative, design ka hissa):**
+
+| Naam | Kya | Kahan register hoga |
+| --- | --- | --- |
+| `KbSnapshot` | `kb_snapshot` table ka model (§2.1) — last good `resolve` payload | Central, naya model |
+| `KbClient` | CP ke HTTP client ka thin wrapper (token, base URL, retry) | Core package, naya |
+| `config('khattakbits.cp_url')` | CP ka base URL | `vendor/khattakbits/core/config/khattakbits.php` — aaj **sirf `user_model`** hai, yeh key naya hai |
+| `config('khattakbits.ops_email')` | Provisioning alerts ka recipient (§6.5) | wohi file, naya key |
+
+#### 6.6.2 `kb_user_tenant` schema
+
+```sql
+CREATE TABLE kb_user_tenant (
+    id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id     BIGINT UNSIGNED NOT NULL,          -- product ka local users.id
+    tenant_id   CHAR(26)        NOT NULL,          -- tenants.id (ULID)
+    role_hint   VARCHAR(20)     NOT NULL DEFAULT 'member',  -- owner|admin|member|billing|viewer (CP se)
+    source      VARCHAR(20)     NOT NULL DEFAULT 'sso',     -- sso|provisioning|admin
+    synced_at   TIMESTAMP       NULL,              -- aakhri SSO reconciliation
+    revoked_at  TIMESTAMP       NULL,              -- soft revoke (delete nahi)
+    created_at  TIMESTAMP       NULL,
+    updated_at  TIMESTAMP       NULL,
+
+    UNIQUE KEY uq_kb_user_tenant (user_id, tenant_id),
+    KEY idx_kb_user_tenant_tenant (tenant_id, revoked_at),
+    CONSTRAINT fk_kbt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    -- tenant_id par FK NAHI: tenants.id ULID hai magar stancl ki table par
+    -- FK rakhna restore/import ko mushkil banata hai; app-level integrity
+);
+```
+
+**`role_hint` authority nahi hai.** Tenant DB ka `model_has_roles` authoritative hai. `role_hint` sirf UI (badge), audit, aur "owner kaun hai" ke liye hai — `Gate` isay nahi padhta.
+
+#### 6.6.3 `TenantOwnerMapper` — teen steps, sab idempotent
+
+```php
+namespace App\Support\Tenancy;
+
+use Illuminate\Support\Facades\DB;
+use KhattakBits\Core\Models\User;
+use Stancl\Tenancy\Database\Models\Tenant;
+use Spatie\Permission\PermissionRegistrar;
+
+final class TenantOwnerMapper
+{
+    /**
+     * @param  array{kb_user_id:int, email:string, name:string}  $owner
+     */
+    public function map(Tenant $tenant, array $owner): void
+    {
+        // ── Step 1: central mirror user ──────────────────────────────────
+        // kb_user_id = CP users.id = OIDC `sub`. Email badal sakti hai, sub nahi.
+        $user = User::query()->firstOrNew(['kb_user_id' => $owner['kb_user_id']]);
+
+        $user->fill([
+            'name'      => $user->exists ? $user->name : $owner['name'],
+            'email'     => $user->exists ? $user->email : $owner['email'],
+            'is_active' => true,
+        ]);
+
+        // Password nahi — D5: tenant users ka local password hota hi nahi.
+        // `password` column nullable hai; agar nahi, random 64-char hash.
+        if (! $user->exists) {
+            $user->password = bcrypt(\Illuminate\Support\Str::random(64));
+        }
+
+        $user->save();
+
+        // ── Step 2: pivot row ────────────────────────────────────────────
+        DB::connection('central')->table('kb_user_tenant')->upsert(
+            [[
+                'user_id'    => $user->id,
+                'tenant_id'  => $tenant->getTenantKey(),
+                'role_hint'  => 'owner',
+                'source'     => 'provisioning',
+                'synced_at'  => null,          // pehla SSO reconcile karega
+                'revoked_at' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]],
+            ['user_id', 'tenant_id'],
+            ['role_hint', 'source', 'revoked_at', 'updated_at'],
+        );
+
+        // ── Step 3: tenant DB mein `owner` role ──────────────────────────
+        tenancy()->initialize($tenant);
+
+        try {
+            // §2.3.1(a) — warna tenant A ka permission cache tenant B ko serve karega
+            app(PermissionRegistrar::class)->cacheKey = 'spatie.permission.cache.'.$tenant->getTenantKey();
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+            // Role tenant DB mein exist karna chahiye (TenantSeeder banata hai).
+            // Na mile to foran banao — seeder skip ho gaya ho to bhi kaam chale.
+            $role = \Spatie\Permission\Models\Role::findOrCreate('owner', 'web');
+
+            // syncWithoutDetaching — idempotent, dobara chalne par duplicate nahi
+            $user->syncRolesWithoutDetaching([$role]);
+        } finally {
+            tenancy()->end();
+        }
+    }
+}
+```
+
+**Teen bareek baatein:**
+
+1. **`syncRolesWithoutDetaching` `Role` ki tenant connection par chalta hai** — `Role::$connection = 'tenant'` (§2.3.1(b)) ki wajah se pivot query tenant DB mein jati hai, jabke `$user` central se aaya. Yeh exactly wohi mechanism hai jo `$user->can()` ke liye chahiye.
+2. **`findOrCreate` `syncWithoutDetaching` se pehle** — `TenantSeeder` `owner` role banata hai, magar agar seeder partial chala ho to role missing hoga. `findOrCreate` usay bana deta hai; `firstOrCreate` ki jagah `findOrCreate` is liye ke permission guard (`web`) set ho jaye.
+3. **`tenancy()->initialize()` / `end()` `try/finally` mein** — agar `syncRoles` throw kare to tenancy band honi lazmi, warna baaki provisioning (aur us process ka baaki kaam) tenant DB par chalta rahega. Yeh **silent data corruption** ka classic rasta hai.
+
+#### 6.6.4 Idempotency guarantee
+
+| Step | Dobara chalne par | Mechanism |
+| --- | --- | --- |
+| Mirror user | Same row, koi duplicate nahi | `firstOrNew(['kb_user_id' => ...])` |
+| Pivot | Same row update | `upsert` on `UNIQUE(user_id, tenant_id)` |
+| Tenant role | Koi duplicate `model_has_roles` nahi | `syncWithoutDetaching` |
+| `owner` role | Same role | `findOrCreate` |
+
+**Yeh test T21 se prove hota hai** (§10.5): mapper do dafa chalao → `users` count 1, pivot count 1, `model_has_roles` count 1.
+
+#### 6.6.5 Failure modes
+
+| Failure | Nateeja | Handling |
+| --- | --- | --- |
+| CP owner resolve nahi hua | `RuntimeException`, state `failed`, `failed_at_state = owner_mapping` | `--owner-id`/`--owner-email` se manual retry |
+| `users.kb_user_id` unique violation (race: SSO login ne pehle row bana di) | `QueryException` | `firstOrNew` se pehle `updateOrCreate` try karein; race window chhoti hai magar real |
+| `owner` role tenant DB mein nahi | `findOrCreate` bana deta hai | ✅ |
+| Tenancy end nahi hui (exception) | Baaki process tenant DB par | `try/finally` |
+| CP ne ghalat `kb_user_id` bheja | Galat user owner ban jata hai | CP-side validation + `security_events` mein `tenant.owner_mapped` audit |
+
+**Race ka fix (production code):**
+
+```php
+$user = User::query()->where('kb_user_id', $owner['kb_user_id'])->first();
+
+$user ??= User::create([...]);   // unique index race ko pakdega
+
+// QueryException (1062 duplicate) par dobara read karo
+```
+
+### 6.7 Trigger points
 
 | Kab | Kya |
 | --- | --- |
-| CP webhook `subscription.created` (signed) | `ProvisionTenant::dispatch($tenantId, $slug)` — **idempotent**, dobara aaye to no-op |
+| CP webhook `subscription.created` (signed) | `ProvisionTenant::dispatch($tenantId, $slug, $owner)` — **idempotent**, dobara aaye to no-op |
 | CP webhook `subscription.renewed` | Kuch nahi (tenant already `ready`) |
-| Pehla successful SSO login jahan `kb_user_tenant` row na ho | **Nahi** — provisioning sirf webhook se, warna login race mein do jobs ban jate hain |
-| Admin manual | `php artisan tenants:provision {tenant}` |
+| Pehla successful SSO login jahan `kb_user_tenant` row na ho | **Nahi** — provisioning sirf webhook se, warna login race mein do jobs ban jate hain. Membership `ReconcileMemberships` (§3.6.1) banata hai, provisioning nahi |
+| Admin manual | `php artisan tenants:provision {tenant} [--retry] [--owner-id=] [--owner-email=]` |
+| Sweeper (§6.5) | Har 5 min — stuck rows ko `failed` + alert |
 
 **Idempotency key:** `webhook_events` (`X-KB-Event-Id`) already dedupe karta hai (`02` §5.1), is liye same webhook do dafa aane par doosri dafa job dispatch hi nahi hogi. Uske baghair bhi state machine `ready` par no-op karta hai — **double protection**.
-
----
 
 ## 7. Module migration convention
 
@@ -1147,11 +1724,15 @@ return database_path('migrations/tenant');
 
 | Cheez | Setting |
 | --- | --- |
-| Naming | `tenancy.database.prefix = 'tenant'`, `suffix = ''` → `tenant01HX...` (32 chars, MySQL limit 64) ✅ |
+| **Prefix** | `tenancy.database.prefix = env('TENANCY_DB_PREFIX', 'mizaan_t_')`, `suffix = ''` → `mizaan_t_01HX...` (35 chars, MySQL limit 64) ✅ |
+| **Per-product prefix kyun** | Ek MySQL server par kai products hote hain (`mizaan_t_`, `lawbits_t_`). Prefix se GRANT pattern per-product ban jata hai aur ek product ka user doosre product ki DB ko chhu hi nahi sakta (§10.2) |
 | Template | `template_tenant_connection = null` → `central_connection` (`DB_CONNECTION=mysql`) |
 | Manager | `mysql => MySQLDatabaseManager` |
 | Per-tenant DB user | **Phase 1 mein nahi.** `PermissionControlledMySQLDatabaseManager` har tenant ke liye user + GRANT banata hai — isolation behtar, ops mehnga. Phase 2 (§10.2) |
 | `database.default` | `central` (alias of `mysql`) |
+| Provisioning credential | `database.connections.provision` — `DB_PROVISION_USERNAME`/`DB_PROVISION_PASSWORD`. Sirf `tenants:provision`/`tenants:destroy` use karte hain, web app **kabhi nahi** (§10.2) |
+
+**Prefix badalna ek data migration hai.** Agar kabhi `tenant` → `mizaan_t_` karna ho to har tenant ka `tenancy_db_name` (`tenants.data` mein) update karna hoga **aur** DB rename karna hoga. Is liye prefix **Phase 1 shuru hone se pehle** tay karein — `config/tenancy.php` mein default `'tenant'` chhor dena baad mein mehnga hai.
 
 ### 8.2 Cache — tags nahi, manual prefix
 
@@ -1198,6 +1779,7 @@ final class TenantCache
 | `storage/logs` | ✅ | ✅ (same) |
 | `storage/framework/{cache,views,sessions}` | ✅ | ✅ (same) |
 | `public/storage` symlink | `storage/app/public` | — |
+
 
 `php artisan storage:link` ek hi symlink, `public/storage` → `storage/app/public`. Tenant files `public/storage/tenant{id}/...` par serve hongi. **Yeh public hai** — agar attachments public nahi hone chahiye (aaj `local` disk par hain, `public` par nahi), to `public` disk ka istemal **na** karein.
 
@@ -1381,62 +1963,232 @@ done
 
 ### 10.2 DB user privileges
 
-**Phase 1 — ek MySQL user, sab DBs:**
+**Purana design ghalat tha.** `GRANT CREATE ON *.*` / `GRANT DROP ON *.*` app user ko **koi bhi** database drop/create karne ka haq de deta hai — ek SQL injection se `admin_core` ya doosre product ki DB ud sakti hai. `GRANT ALL ON \`tenant%\`.*` us se bhi bura: `tenant%` pattern `tenant_evil` bhi match karta hai aur **underscore `_` MySQL GRANT mein wildcard hai**, is liye `tenant%` ka matlab `tenan` + koi bhi ek char + kuch bhi.
+
+Naya design **teen** principles par hai:
+
+1. **Per-product DB prefix** (`mizaan_t_`, `lawbits_t_`) — pattern per-product scoped.
+2. **Per-product MySQL user** (`mizaan_app`, `lawbits_app`) — ek product ka leak doosre tak nahi.
+3. **CREATE/DROP DATABASE ka haq app user ke paas nahi** — sirf ek alag privileged credential, jo sirf CLI commands use karti hain.
+
+#### 10.2.1 Teen credentials
+
+| Credential | Kahan use hota hai | Kya kar sakta hai | Kya **nahi** kar sakta |
+| --- | --- | --- | --- |
+| `mizaan_app` | Web app, queue workers, `tenants:migrate` | DML/DDL **`mizaan_t_%`**.* aur `mizaan_central`.* par | Koi database create/drop, koi doosri DB, koi global privilege |
+| `mizaan_provision` | **Sirf** `tenants:provision`, `tenants:destroy` (CLI) | `CREATE`/`DROP` database | Web requests se reachable nahi (`.env` sirf CLI par load) |
+| `mizaan_backup` | Backup script | `SELECT`, `LOCK TABLES`, `SHOW VIEW`, `TRIGGER`, `PROCESS` | Koi write, koi DDL |
+
+#### 10.2.2 App user — pattern grants, **koi global privilege**
 
 ```sql
--- App user: saare tenant DBs par DML/DDL
-GRANT ALL PRIVILEGES ON `tenant%`.* TO 'kb_app'@'%';
-GRANT ALL PRIVILEGES ON `admin_core`.* TO 'kb_app'@'%';
+-- Ek product ka app user. `_` escape lazmi hai (MySQL GRANT mein wildcard hai).
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES,
+      LOCK TABLES, CREATE TEMPORARY TABLES, CREATE VIEW, SHOW VIEW, TRIGGER, EXECUTE
+  ON `mizaan\_t\_%`.* TO 'mizaan_app'@'10.0.0.%';
 
--- CREATE DATABASE / DROP DATABASE ke liye
-GRANT CREATE ON *.* TO 'kb_app'@'%';
-GRANT DROP   ON *.* TO 'kb_app'@'%';   -- sirf tenants:destroy ke liye
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES,
+      LOCK TABLES, CREATE TEMPORARY TABLES, CREATE VIEW, SHOW VIEW, TRIGGER, EXECUTE
+  ON `mizaan_central`.* TO 'mizaan_app'@'10.0.0.%';
+
+FLUSH PRIVILEGES;
 ```
 
-**Risk (honest):** ek SQL injection ya compromised app = **saare tenants**. Yeh subdomain design mein bhi tha, path se koi farq nahi.
+**Escaping ka farq — yeh table ghalat likhne se security hole ban jata hai:**
 
-**Phase 2 — per-tenant user** (`PermissionControlledMySQLDatabaseManager`):
+| Likha | MySQL ka matlab | Nateeja |
+| --- | --- | --- |
+| `` `mizaan_t_%` `` | `mizaan` + koi bhi char + `t` + koi bhi char + kuch bhi | `mizaanXtY_anything` bhi match — **galat** |
+| `` `mizaan\_t\_%` `` | literal `mizaan_t_` + kuch bhi | sirf is product ki tenant DBs ✅ |
+
+Verify karein (grant lagane ke baad):
+
+```sql
+SHOW GRANTS FOR 'mizaan_app'@'10.0.0.%';
+-- Har line `mizaan\_t\_%` dikhani chahiye, `*.*` ek bhi nahi
+```
+
+**Host restriction (`@'10.0.0.%'`) `@'%'` ki jagah:** app server ke private subnet tak mehdood. Compromised credential tab bhi internet se use nahi ho sakti. Agar app aur DB same host par hain to `@'127.0.0.1'` behtar.
+
+#### 10.2.3 Provisioning user — CREATE/DROP, sirf CLI
+
+```sql
+CREATE USER 'mizaan_provision'@'127.0.0.1' IDENTIFIED BY '<random 48 chars>';
+
+-- Option A (safe, magar global): MySQL 8.0 mein CREATE DATABASE ke liye
+-- global CREATE chahiye. Yeh credential sirf CLI se load hoti hai.
+GRANT CREATE, DROP ON *.* TO 'mizaan_provision'@'127.0.0.1';
+
+-- Magar uske DML/DDL bhi pattern tak mehdood:
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES,
+      LOCK TABLES, CREATE TEMPORARY TABLES, CREATE VIEW, SHOW VIEW, TRIGGER, EXECUTE
+  ON `mizaan\_t\_%`.* TO 'mizaan_provision'@'127.0.0.1';
+```
+
+**`ON *.*` yahan bhi kyun:** MySQL 8.0 mein `CREATE DATABASE` ke liye `CREATE` privilege **global** scope par chahiye — database-scope `CREATE` sirf `CREATE TABLE` deta hai. **`NOT VERIFIED`**: kya MySQL 8.0+ `` GRANT CREATE ON `mizaan\_t\_%`.* `` ko `CREATE DATABASE` ke liye accept karta hai. Verify karne ka tareeqa:
+
+```sql
+-- provision user se, ek scratch server par
+CREATE DATABASE `mizaan_t_probe`;
+-- SUCCESS → pattern grant kaafi hai, `ON *.*` hata dein
+-- ERROR 1044  → global CREATE lazmi hai (Option A)
+DROP DATABASE `mizaan_t_probe`;
+```
+
+**Agar Option A lazmi ho to blast radius kaise kam hota hai:**
+
+- Yeh credential **`.env` mein sirf CLI ke liye** hai. Web app ke process mein load hi na ho — alag `.env.cli` ya `DB_PROVISION_*` keys jo `config/database.php` ke `provision` connection mein jati hain, aur woh connection **default nahi**.
+- `tenants:destroy`/`tenants:provision` `--confirm={slug}` maangte hain.
+- SQL injection web app mein ho to `mizaan_app` milta hai — jise `CREATE DATABASE`/`DROP DATABASE` ka haq **nahi**.
+- Audit: `security_events` mein `tenant.db_created`/`tenant.db_dropped` (actor = admin).
+
+#### 10.2.4 App ko privileged connection se kaise jodna hai
+
+`MySQLDatabaseManager::database()` `DB::connection($this->connection)` use karta hai, aur `$this->connection` `DatabaseConfig::manager()` har call par `getTemplateConnectionName()` se set karta hai (`MySQLDatabaseManager.php:15-35`, `DatabaseConfig.php:105-110`). Is liye credential **`tenancy.database.template_tenant_connection`** se aata hai.
+
+Provisioning ke dauraan usay `provision` par switch karein, aur **kaam khatam hote hi wapas**:
+
+```php
+// app/Support/Tenancy/TenantProvisioner.php
+private function withProvisionConnection(callable $fn): mixed
+{
+    $original = config('tenancy.database.template_tenant_connection');
+
+    config(['tenancy.database.template_tenant_connection' => 'provision']);
+
+    try {
+        return $fn();
+    } finally {
+        config(['tenancy.database.template_tenant_connection' => $original]);
+    }
+}
+
+private function stepCreatingDb(Tenant $tenant, array $owner): void
+{
+    $this->withProvisionConnection(function () use ($tenant) {
+        $manager = $tenant->database()->manager();
+
+        if (! $manager->databaseExists($tenant->database()->getName())) {
+            $manager->createDatabase($tenant);
+        }
+    });
+}
+```
+
+**`finally` mein restore lazmi.** Warna usi process ka baaki kaam (aur `tenants:migrate` ke andar bane tenant connections) privileged credential se chalega — yaani web app ka worker bhi `CREATE DATABASE` kar sakega. Yeh **exactly** wohi bug hai jo hum hata rahe hain, sirf chhupa hua.
+
+**`tenants:destroy`** mein bhi wohi wrapper:
+
+```php
+$this->withProvisionConnection(fn () => $tenant->database()->manager()->deleteDatabase($tenant));
+```
+
+#### 10.2.5 Verify (definition of done)
+
+```bash
+# 1) App user ke paas koi global privilege nahi
+mysql -u mizaan_app -p -e "SHOW GRANTS" | grep -c '\*\.\*'      # → 0
+
+# 2) App user doosri product ki DB nahi chhu sakta
+mysql -u mizaan_app -p -e "SELECT 1 FROM lawbits_central.users LIMIT 1"
+# → ERROR 1142 (SELECT command denied)
+
+# 3) App user database drop nahi kar sakta
+mysql -u mizaan_app -p -e "DROP DATABASE mizaan_t_probe"
+# → ERROR 1044 (Access denied)
+
+# 4) Provision user kar sakta hai
+mysql -u mizaan_provision -p -e "CREATE DATABASE mizaan_t_probe; DROP DATABASE mizaan_t_probe"
+# → SUCCESS
+```
+
+**Risk jo ab bhi hai (honest):** `mizaan_app` ke paas `mizaan_t_%` par `DROP` hai (migrations ke `down()` ke liye). Ek SQL injection se **is product ke** tenant tables drop ho sakte hain — magar `admin_core`, doosre product, aur `CREATE/DROP DATABASE` safe hain. Phase 2 (per-tenant user, §10.2.6) isay ek tenant tak le aata hai.
+
+#### 10.2.6 Phase 2 — per-tenant user
 
 ```sql
 -- har tenant ke liye
-CREATE USER 'tenant_01HX...'@'%' IDENTIFIED BY '<random>';
-GRANT ALL PRIVILEGES ON `tenant01HX...`.* TO 'tenant_01HX...'@'%';
+CREATE USER 'mizaan_t_01HX...'@'10.0.0.%' IDENTIFIED BY '<random>';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES,
+      LOCK TABLES, CREATE TEMPORARY TABLES, CREATE VIEW, SHOW VIEW, TRIGGER, EXECUTE
+  ON `mizaan_t_01HX...`.* TO 'mizaan_t_01HX...'@'10.0.0.%';
 ```
 
-Credentials `tenants.data` ke `tenancy_db_username`/`tenancy_db_password` mein (encrypted — `06` §5.2 ka `APP_KEY` rule yahan bhi lagta hai). Faida: ek tenant ka leak doosre tak nahi. Qeemat: N users manage karne padenge, `mysql.user` table bhaari hoti hai, aur connection pooling mushkil.
+`PermissionControlledMySQLDatabaseManager` yeh khud karta hai (`$grants` array `PermissionControlledMySQLDatabaseManager.php:15-19` mein wohi 18 privileges hain jo upar hain — match karta hai ✅). Credentials `tenants.data` ke `tenancy_db_username`/`tenancy_db_password` mein (encrypted — `06` §5.2 ka `APP_KEY` rule yahan bhi lagta hai).
 
 **Phase 1 mein per-tenant user nahi le rahe** — kyunke `DatabaseTenancyBootstrapper` har request par connection banata hai aur 100+ tenants par user creation/rotation ops overhead hai. Yeh Phase 2 ka decision hai.
 
 ### 10.3 N tenant DBs ka backup
 
-`docs/02-DEPLOYMENT-GUIDE.md` §11 ka `backup.sh` **ek** DB ka dump leta hai. Naya:
+`docs/02-DEPLOYMENT-GUIDE.md` §11 ka `backup.sh` **ek** DB ka dump leta hai. Naya — **`mizaan_backup` credential** (read-only, §10.2.1) aur **escaped prefix pattern** ke saath:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Read-only backup user (10.2.1). Root/app credential kabhi nahi.
+export MYSQL_PWD="$BACKUP_DB_PASSWORD"
+
+DB_PREFIX="${TENANCY_DB_PREFIX:-mizaan_t_}"        # config se, hard-code nahi
+CENTRAL_DB="${CENTRAL_DB_NAME:-mizaan_central}"
+# LIKE pattern: `_` escape lazmi, warna mizaanXtY... bhi match ho jata hai
+LIKE_PATTERN="${DB_PREFIX//_/\\_}%"
+
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 OUT="/var/backups/kb/${STAMP}"
 mkdir -p "$OUT"
 
+list_tenant_dbs() {
+  mysql -N -B -h "$DB_HOST" -u "$BACKUP_DB_USER" \
+    -e "SHOW DATABASES LIKE '${LIKE_PATTERN}'"
+}
+
 # 1) Central
 mysqldump --single-transaction --quick --routines --triggers \
-  admin_core | gzip > "$OUT/central.sql.gz"
+  -h "$DB_HOST" -u "$BACKUP_DB_USER" "$CENTRAL_DB" | gzip > "$OUT/central.sql.gz"
 
-# 2) Saare tenant DBs
-mysql -N -B -e "SHOW DATABASES LIKE 'tenant%'" | while read -r db; do
-  mysqldump --single-transaction --quick --routines --triggers "$db" \
-    | gzip > "$OUT/${db}.sql.gz"
+# 2) Saare tenant DBs — prefix se, `tenant%` se nahi
+list_tenant_dbs | while read -r db; do
+  mysqldump --single-transaction --quick --routines --triggers \
+    -h "$DB_HOST" -u "$BACKUP_DB_USER" "$db" | gzip > "$OUT/${db}.sql.gz"
 done
 
-# 3) Manifest — kaunsi DBs, kitni rows (restore verification ke liye)
-mysql -N -B -e "SHOW DATABASES LIKE 'tenant%'" > "$OUT/manifest.txt"
+# 3) Manifest — kaunsi DBs + row counts (restore verification ke liye)
+list_tenant_dbs > "$OUT/manifest.txt"
+
+# 3b) Cross-check: `tenants` table ki har row ka DB manifest mein ho
+mysql -N -B -h "$DB_HOST" -u "$BACKUP_DB_USER" "$CENTRAL_DB" \
+  -e "SELECT tenancy_db_name FROM tenants WHERE deleted_at IS NULL" \
+  | sort > "$OUT/expected.txt"
+sort -o "$OUT/manifest.txt" "$OUT/manifest.txt"
+
+if ! diff -q "$OUT/expected.txt" "$OUT/manifest.txt" > /dev/null; then
+  echo "MISMATCH: tenants table aur maujooda DBs match nahi karte" >&2
+  diff "$OUT/expected.txt" "$OUT/manifest.txt" >&2
+  exit 1                      # backup ko fail karo — chupchaap adhoora backup na jaye
+fi
 
 # 4) Encrypt (06 §5.2.1 — APP_KEY same bucket mein NAHI jayega)
 tar -czf - -C "$OUT" . | age -r "$BACKUP_PUBKEY" > "${OUT}.tar.age"
 
 # 5) Off-site
 aws s3 cp "${OUT}.tar.age" "s3://kb-backups/${STAMP}.tar.age"
+```
+
+**Backup script mein teen badlav aur kyun:**
+
+| Badlav | Kyun |
+| --- | --- |
+| `LIKE 'mizaan\_t\_%'` (escaped) | Bina escape `mizaanXtY_foo` bhi match hota — doosre product ki DB backup mein aa jati, ya galat DB dump hoti |
+| `mizaan_backup` user, root/app nahi | Backup script compromised ho to sirf read access. `mysqldump` ko `PROCESS`/`LOCK TABLES`/`SHOW VIEW`/`TRIGGER` chahiye, `ALL PRIVILEGES` nahi |
+| `expected.txt` vs `manifest.txt` diff | `tenants` row hai magar DB nahi (ya ulta) → backup **fail** ho. Yeh `provisioning` ke beech mein liye gaye backup ko pakadta hai, jo restore par orphan DB deta hai |
+
+**Cross-check ka `tenancy_db_name`:** stancl `DatabaseConfig::getName()` pehle `tenants.data.tenancy_db_name` dekhta hai (`DatabaseConfig.php:73-76`), warna `prefix + id + suffix` generate karta hai. Column `tenants.data` JSON ke andar hai, is liye production query:
+
+```sql
+SELECT COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.tenancy_db_name')),
+                CONCAT('mizaan_t_', id)) AS tenancy_db_name
+FROM tenants WHERE deleted_at IS NULL;
 ```
 
 **Teen cheezein jo `06` §5.2.1 ne already flag ki thin aur yahan dobara aati hain:**
@@ -1538,6 +2290,37 @@ abstract class TenantTestCase extends TestCase
 | **T19** | `test_provisioning_is_idempotent` | Job do dafa chalao — `ready` par no-op, DB dobara create nahi |
 | **T20** | `test_provisioning_failure_sets_failed_state_and_keeps_db` | Migration fail → `provisioning_state = failed`, DB **maujood** |
 
+**§6 owner mapping, resume, sweeper ke tests (T21-T32):**
+
+| # | Test | Kya prove karta hai |
+| --- | --- | --- |
+| **T21** | `test_owner_mapping_is_idempotent` | `TenantOwnerMapper::map()` **do dafa** chalao → `users` count 1, `kb_user_tenant` count 1, `model_has_roles` count 1 |
+| **T22** | `test_owner_mapping_creates_mirror_user_pivot_and_tenant_role` | Teenon cheezein: `users.kb_user_id` set, pivot `role_hint='owner'`, tenant DB mein `$user->hasRole('owner')` = true |
+| **T23** | `test_owner_mapping_creates_owner_role_if_seeder_skipped` | `TenantSeeder` na chalao → `findOrCreate` role bana de, `syncRolesWithoutDetaching` kaam kare |
+| **T24** | `test_owner_mapping_ends_tenancy_on_exception` | `syncRoles` throw kare → `tenancy()->initialized` = **false** (try/finally guard) |
+| **T25** | `test_owner_mapping_fails_when_cp_owner_unavailable` | Resolver CP 5xx + koi snapshot → `RuntimeException`, `failed_at_state = 'owner_mapping'`, `provisioning_state = 'failed'` |
+| **T26** | `test_retry_resumes_from_failed_at_state` | `owner_mapping` par fail → `--retry` → `stepMigrating` **dobara nahi** chalta (spy), sirf `owner_mapping` |
+| **T27** | `test_retry_clears_failed_at_state_before_running` | Retry ke baad success → `failed_at_state` = null, `provisioning_error` = null, `provisioning_attempts` = 2 |
+| **T28** | `test_retry_without_flag_refuses_failed_tenant` | `tenants:provision` bina `--retry` → exit code FAILURE, koi state change nahi |
+| **T29** | `test_sweeper_marks_stuck_tenant_failed` | `provisioning_state='migrating'`, `provisioning_state_at = now()->subMinutes(20)` → sweeper → `failed`, `failed_at_state='migrating'` |
+| **T30** | `test_sweeper_ignores_fresh_and_ready_tenants` | `migrating` + 5 min purana → touch nahi; `ready` + 1 din purana → touch nahi |
+| **T31** | `test_sweeper_dry_run_changes_nothing` | `--dry-run` → log hota hai, DB row **bilkul** same |
+| **T32** | `test_sweeper_sends_one_digest_for_many_stuck_tenants` | 3 stuck tenants → **1** notification (3 nahi) |
+| **T33** | `test_membership_comes_from_cp_not_url` | CP `users/tenants` khaali, URL `/acme/dashboard` → **koi** `kb_user_tenant` row nahi banti, redirect picker par |
+| **T34** | `test_membership_reconcile_revokes_missing_tenants` | Pehle 2 tenants, CP ab 1 deta hai → doosri row `revoked_at` set, delete nahi |
+| **T35** | `test_membership_reconcile_keeps_rows_when_cp_down` | CP 500 → login fail (`503`), purani memberships **untouched** |
+| **T36** | `test_slug_drift_skips_membership` | CP slug ≠ local slug → row nahi banti, error report hota hai |
+| **T37** | `test_app_user_has_no_global_privileges` | `SHOW GRANTS` mein `*.*` zero (MySQL only, `@group mysql`) |
+| **T38** | `test_backup_script_pattern_is_escaped` | Script ka `LIKE` pattern `mizaan\_t\_%` hai, `mizaan_t_%` nahi (static assert) |
+
+**T21-T24 ka core:** owner mapping idempotent hai ya nahi — yeh woh cheez hai jo retry par duplicate `model_has_roles` ya duplicate pivot bana deti hai. `syncWithoutDetaching` + `upsert` + `firstOrNew` teenon ka combination test karta hai.
+
+**T26 sab se nazuk:** `--retry` ka poora maqsad yeh hai ke `migrating` dobara **na** chale. Agar `failed_at_state` ghalat set ho ya clear na ho, retry ya to shuru se chalega (mehnga, aur migrations dobara) ya ghalat step par. Spy/Mock se assert karein ke skipped steps **call hi nahi** hue.
+
+**T33-T36 membership ka poora contract:** `kb_user_tenant` sirf CP se banti hai (§3.6.1). `T33` specifically woh test hai jo URL-based membership ko pakadta hai — agar koi developer "convenience" ke liye `return_to` se row bana de, yeh fail hoga.
+
+**T37-T38 MySQL-specific:** CI mein SQLite par yeh skip honge (`@group mysql`), staging par chalenge. `T38` static hai — backup script ko parse karta hai, koi DB chahiye nahi.
+
 **T2 kyun sab se important:** yeh woh test hai jo single-origin design ka poora risk cover karta hai. Subdomain design mein `/beta/...` A ke session se **cross-origin** hota (cookie nahi jati). Path design mein cookie **jati** hai — sirf `EnsureTenantMembership` rokta hai. Agar woh middleware kisi route par bhool jaye, **yeh test fail karega**, warna data leak chupchaap ho jayega.
 
 **Test infra ka aakri note:** `phpunit.xml` mein `DB_CONNECTION=sqlite`, `DB_DATABASE=:memory:` hai. Tenant DBs **file-based** SQLite hongi (`SQLiteDatabaseManager::createDatabase()` `database_path($name)` par file banata hai — `:memory:` nahi). Is liye:
@@ -1589,6 +2372,11 @@ abstract class TenantTestCase extends TestCase
 | **580** | Code snippet `env('ALLOWED_SSO_HOSTS')` → DB se (G1 ka fix) |
 | **734** | `return_url` validation "Host `tenants_registry.subdomain` ya `products.domain`" → `products.domain` + `app.url` host |
 | **§3.4 renew-link** | `return_url` path-based mein `/{slug}/billing/...` hoga — host validation same, path validation add |
+| **§1.2 endpoints table (~line 182)** | **Naya endpoint:** `GET /api/v1/users/tenants` (user bearer) — caller ke tenants ki list, `tenants_registry` + `kb_user_product_access` JOIN se. Yeh `kb_user_tenant` ka **authoritative source** hai (`07` §3.6.1) |
+| **§4.1 `subscription.created` row (~line 909)** | `data` mein **`tenant.owner = { kb_user_id, email, name }`** add karna **lazmi** — provisioning owner mapping iske baghair nahi ho sakti (`07` §6.6.1). Aaj sirf `subscription_id`, `status`, `plan_key`, `seats`, `period` hain |
+| **§3.2 `resolve` response (~line 634)** | `tenant.owner = { kb_user_id, email, name }` add karein — re-provision / DB restore / webhook miss ka fallback |
+| **§4.1 `tenant.provisioned` row (~line 907)** | `data.owner_user_id` already hai ✅ — magar woh **product → CP** direction hai. Reverse direction (`subscription.created`/`resolve`) mein owner **nahi** hai, woh gap upar do rows se band hota hai |
+| **§1.8 `roles` honesty (~line 393)** | "CP sirf `kb_user_product_access.role` deta hai" ✅ — `07` §6.6.2 isay `kb_user_tenant.role_hint` mein store karta hai, authority tenant DB ke `model_has_roles` par |
 
 ### 11.4 `06-PAYMENTS-DESIGN.md`
 
@@ -1627,9 +2415,19 @@ abstract class TenantTestCase extends TestCase
 | 10 | Ops: backup script, export, suspend, DB privileges, deploy runbook | 1.5 |
 | 11 | Tests T1-T20 + `TenantTestCase` | 2.0 |
 | 12 | Documentation + `02`/`04`/`05` corrections (§11) | 1.0 |
-| | **Total** | **18.5 din** |
+| **13** | **Owner mapping (`owner_mapping` state + `TenantOwnerMapper` + `TenantOwnerResolver`)** — §6.6 | **0.5** |
+| **14** | **`failed_at_state` resume + `--retry` + `provisioning_state_at`/`provisioning_attempts`** — §6.1, §6.3, §6.4 | **0.5** |
+| **15** | **Stuck-provisioning sweeper + digest alert + schedule** — §6.5 | **0.5** |
+| **16** | **DB privileges redesign: per-product prefix, 3 credentials, pattern grants, backup script rewrite** — §10.2, §10.3 | **0.5** |
+| **17** | **Membership reconciliation (`ReconcileMemberships`) + `GET /api/v1/users/tenants` CP contract** — §3.6.1 | **0.5** |
+| **18** | **Tests T21-T38** | **1.0** |
+| | **Total** | **21.5 din** |
 
-**Package work (`khattakbits/core` v2.0.0):** ~3 din ismein shamil hain (#5, #7, #9) — magar woh package repo mein honge, alag release.
+**`18.5 → 21.5 din` (+3).** Tafseel: owner mapping 0.5 + resume/retry 0.5 + sweeper 0.5 + DB privileges 0.5 + membership reconcile 0.5 + 18 naye tests 1.0 = **3.0**. (User ne "+~1 din" kaha tha — asal mein 5 alag features hain, aur naye tests 1 din lete hain. Agar tests ko #11 mein merge kar dein to delta 2.0 din hai.)
+
+**Package work (`khattakbits/core` v2.0.0):** ~3.5 din ismein shamil hain (#5, #7, #9, #17 ka helper) — magar woh package repo mein honge, alag release.
+
+**CP-side work (yeh product repo nahi, CP repo):** `GET /api/v1/users/tenants` endpoint + `subscription.created`/`resolve` mein `tenant.owner` — ~1 din, **CP ke backlog mein** (`05` §11.3). Iske baghair owner mapping aur membership reconcile dono kaam nahi karte, is liye yeh **dependency** hai, parallel kaam nahi.
 
 ### 12.2 Risks — path-based vs purana subdomain design
 
@@ -1650,8 +2448,15 @@ abstract class TenantTestCase extends TestCase
 | **R13** | SEO — tenant content ek domain par | Ek domain, sab paths | Alag subdomains | Neutral (SaaS ke liye path theek hai) |
 | **R14** | Ek tenant ka custom branding | Sirf colors/logo (JS injection nahi) | Same | M5 |
 | **R15** | `URL::defaults` Octane leak | **Real agar Octane** | Nahi | `NOT VERIFIED` — Octane use na karein |
+| **R16** | **Owner mapping missing** → tenant `ready` magar koi owner/membership nahi | **Real** (design gap tha) | Same | §6.6 — `owner_mapping` state + CP payload (§11.3) |
+| **R17** | **Stuck provisioning** — worker kill par row hamesha `migrating` par | **Real** | Same | §6.5 sweeper + `failed_at_state` |
+| **R18** | **`GRANT ... ON *.*` se poora server** | **Blocker** tha (purana §10.2) | Same | §10.2 — 3 credentials, pattern grants, escaped `_` |
+| **R19** | Membership URL se ban jaye | **Real** | Nahi (handoff tenant-bound) | §3.6.1 + **T33** test |
+| **R20** | CP `subscription.created` mein owner nahi | **Real — dependency** | Same | `07` §11.3 — CP backlog item, product ka kaam nahi |
 
 **Net:** path-based infra mein **bahut** simple hai (R10, R11), magar security surface **bara** hai (R1, R2, R3). R1 ka ilaaj CSP + no-`v-html` hai — jo aaj already true hai (`v-html` zero hits). R2 ka ilaaj ek middleware + ek test hai. Yeh qeemat acceptable hai **sirf agar** CSP enforce mode mein rahe.
+
+**R16 aur R19 design ke do asli gaps thay** (v1 mein): provisioning tenant DB bana deti thi magar owner ko koi role nahi milta, aur membership ka source specify nahi tha — jo URL-based membership ka rasta khol deta. Dono v2 mein band hain.
 
 **Agar kabhi switch karna pade:** `tenantUrl()` ki wajah se sirf `baseFor()` badlega + middleware swap. Data model, tables, provisioning — sab same. **Yeh design ka deliberate hedge hai.**
 ---
@@ -2002,6 +2807,12 @@ Route::get('/internal/tls-ask', function (Request $request) {
 | **T13** | Module migrations `{central,tenant}`, `tenants:migrate` ke `--path` se | `loadMigrationsFrom` tenant paths ko `migrate` mein le aata | Nahi |
 | **T14** | Custom domains = **Phase 2**, SSO **Option B** (central login + handoff) | Option A CP admin par dependant + 100 redirect_uris | Haan |
 | **T15** | Webhooks hamesha central host se | `05` G1 allowlist exact match | Nahi |
+| **T16** | Provisioning mein **`owner_mapping`** state — mirror user + pivot + tenant `owner` role, sab idempotent | Tenant `ready` hona kaafi nahi; owner ke baghair tenant bekaar hai | Nahi |
+| **T17** | Owner **CP ke `kb_user_id` se** aata hai, email se ya URL se kabhi nahi | Email badalti hai; pehle login se pehle `users` row hoti hi nahi | Nahi |
+| **T18** | `failed_at_state` + `provisioning_state_at` — retry usi step se resume, sweeper inhi par chalta hai | `updated_at` ambiguous hai; shuru se retry mehnga aur ghalat | Nahi |
+| **T19** | Stuck sweeper 15 min, `withoutOverlapping`, ek digest alert | Worker kill par row hamesha phansi rehti hai | Haan (minutes config) |
+| **T20** | **Per-product DB prefix + 3 credentials**, app user ke paas koi global privilege nahi | `ON *.*` se ek injection poora server le leta hai | Prefix = **nahi** (data migration); grants = haan |
+| **T21** | `kb_user_tenant` sirf `GET /api/v1/users/tenants` se, `revoked_at` soft-revoke | URL/product-access se membership = tenant hopping | Nahi |
 
 ---
 
@@ -2010,5 +2821,24 @@ Route::get('/internal/tls-ask', function (Request $request) {
 | v | Date | Kya |
 | --- | --- | --- |
 | **v1** | 13 Nov 2026 | Initial design. `stancl/tenancy` v3.10.1 verified on PHP 8.5.12 + 8.3.27. Path-based identification (D3/D4 superseded). 12 sections + custom domains Phase 2. |
+| **v2** | 13 Nov 2026 | Paanch gaps band kiye (neeche tafseel). Effort 18.5 → **21.5 din**. Tests T1-T20 → **T1-T38**. |
+
+### v2 tafseel
+
+| # | Kya | Sections | Asar |
+| --- | --- | --- | --- |
+| **1** | **Owner mapping** — provisioning mein naya `owner_mapping` state: central mirror user (`users.kb_user_id` = CP `sub`), `kb_user_tenant` pivot (`role_hint='owner'`), tenant DB mein `owner` role (`syncRolesWithoutDetaching`). Teenon idempotent; `TenantOwnerMapper` + `TenantOwnerResolver` ka code | **§6.1, §6.2, §6.3, §6.6 (naya), §2.1** | Tenant ab `ready` ka matlab **owner ke saath** ready. v1 mein tenant banta tha magar koi owner/role/membership nahi hoti thi |
+| **2** | **Membership source of truth** — `kb_user_tenant` sirf `GET /api/v1/users/tenants` (naya CP endpoint) se banti hai; `tenants_registry` + `kb_user_product_access` JOIN. URL slug, `return_to`, `userinfo.products[]`, email-match — sab **mana**. `ReconcileMemberships` code + `revoked_at` soft-revoke. Diagram update | **§3.6, §3.6.1 (naya), §3.8, §11.3** | v1 mein "upsert users + kb_user_tenant" likha tha magar source specify nahi — jo URL-based membership ka rasta kholta tha |
+| **3** | **Provisioning resilience** — `failed_at_state` + `provisioning_state_at` + `provisioning_attempts`; `--retry` usi step se resume (skipped steps call hi nahi hote); `tenants:sweep-stuck` command jo 15 min se phansi rows ko `failed` mark karta hai + ek digest alert; schedule `everyFiveMinutes` | **§6.1, §6.2, §6.3, §6.4, §6.5 (naya)** | Worker kill / deploy restart par row hamesha `migrating` par phansi rehti thi — koi retry, koi alert nahi |
+| **4** | **DB privileges redesign** — `GRANT CREATE/DROP ON *.*` **hataya**; per-product DB prefix (`mizaan_t_`, `lawbits_t_`); 3 credentials (`mizaan_app`, `mizaan_provision`, `mizaan_backup`); escaped `_` in GRANT patterns (`` `mizaan\_t\_%` ``); `withProvisionConnection()` wrapper + `finally` restore; backup script prefix + `tenants`-vs-DBs cross-check | **§8.1, §10.2 (rewrite), §10.3, §10.2.5** | Purana design ek SQL injection se `DROP DATABASE` de deta tha. Naya: app user ke paas koi global privilege nahi |
+| **5** | **Effort + tests** — +3.0 din (5 features × 0.5 + 1.0 tests) → 21.5; naye tests **T21-T38** (owner mapping 4, resume/sweeper 8, membership 4, DB privileges 2) | **§12.1, §10.5, §12.2 (R16-R20), §14 (T16-T21)** | Har naya feature ka regression test hai, warna woh agli baar chupchaap tootega |
+
+**v2 ke do naye cross-doc dependencies (product ka kaam nahi, CP ka):**
+
+1. `GET /api/v1/users/tenants` — membership ka authoritative source (`05` §1.2 mein add).
+2. `subscription.created` + `resolve` mein `tenant.owner = { kb_user_id, email, name }` — owner mapping ke baghair kaam nahi karti (`05` §3.2, §4.1 mein add).
+
+Dono `§11.3` mein listed hain. **Yeh product ke Phase 1 ka blocking dependency hai** — CP se pehle ship nahi ho sakta.
+
 
 
