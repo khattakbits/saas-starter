@@ -1,22 +1,22 @@
 # 04 — Control Plane Design (data model, state machine, entitlements, admin, storefront)
 
-**Date:** 13 Nov 2026
-**Repo:** `E:/LaraProjects/saas-starter` (branch `extract/package-skeleton`)
-**Depends on:** `docs/platform/02-ARCHITECTURE-DECISIONS.md` (§0 D1–D5, §5), `docs/platform/03-EXTRACTION-PLAN.md` (Part C)
-**Inputs:** `composer.json`, `.env`, `config/database.php`, `phpunit.xml`, `app/Modules/Settings/**`, `khattakbits-core/src/Support/{TableQuery,PermissionCatalog,MenuBuilder,DocumentRegistry,Naming}.php`, `khattakbits-ui/src/**`
+**Date:** 13 Nov 2026  
+**Repo:** `E:/LaraProjects/saas-starter` (branch `extract/package-skeleton`)  
+**Depends on:** `docs/platform/02-ARCHITECTURE-DECISIONS.md` (§0 D1–D5, §5), `docs/platform/03-EXTRACTION-PLAN.md` (Part C)  
+**Inputs:** `composer.json`, `.env`, `config/database.php`, `phpunit.xml`, `app/Modules/Settings/**`, `khattakbits-core/src/Support/{TableQuery,PermissionCatalog,MenuBuilder,DocumentRegistry,Naming}.php`, `khattakbits-ui/src/**`  
 **Rule:** Yeh document **schema snippets + design** hai. Koi migration, model ya code nahi likha gaya.
 
 ---
 
 ## 0. DB target (detected, not assumed)
 
-| Evidence | Value |
-|---|---|
-| `.env:8` | `DB_CONNECTION=mysql` |
-| `.env:9-11` | `DB_HOST=127.0.0.1`, `DB_PORT=3306`, `DB_DATABASE=admin_core` |
+| Evidence                 | Value                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| `.env:8`                 | `DB_CONNECTION=mysql`                                                              |
+| `.env:9-11`              | `DB_HOST=127.0.0.1`, `DB_PORT=3306`, `DB_DATABASE=admin_core`                      |
 | `config/database.php:20` | `'default' => env('DB_CONNECTION', 'sqlite')` — fallback sirf env missing hone par |
-| `phpunit.xml:26-27` | `DB_CONNECTION=sqlite`, `DB_DATABASE=:memory:` |
-| `composer.json` | `laravel/framework 13.38.0`, PHP 8.5 (AGENTS.md) |
+| `phpunit.xml:26-27`      | `DB_CONNECTION=sqlite`, `DB_DATABASE=:memory:`                                     |
+| `composer.json`          | `laravel/framework 13.38.0`, PHP 8.5 (AGENTS.md)                                   |
 
 **Verdict: MySQL is the target database.** Tests SQLite par chalte hain.
 
@@ -67,16 +67,17 @@ erDiagram
 
 ### 1.2 Ownership: control plane vs core package
 
-| Table | Kahan | Kyun |
-|---|---|---|
-| 18 tables neeche §1.3 mein | **CP app** (`app/Modules/Platform`) | Catalog/billing/tenancy sirf CP ka kaam hai; product ko in ka pata bhi nahi chalna chahiye |
-| `users`, `settings`, `audit_logs`, `document_sequences` | **`khattakbits/core`** (already hai) | CP aur products dono use karte hain; `Naming::next()` invoice numbering bhi isi se chalega |
-| `security_events` | **`khattakbits/core`** (banana hai) | D2 ne central kaha; CP aur har product apne central DB mein likhta hai. **Aaj maujood nahi** — koi migration nahi (NOT VERIFIED as built) |
-| `sessions`, `cache`, `jobs`, `personal_access_tokens`, `password_reset_tokens` | Laravel/host | Framework infra |
+| Table                                                                          | Kahan                                | Kyun                                                                                                                                      |
+| ------------------------------------------------------------------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 18 tables neeche §1.3 mein                                                     | **CP app** (`app/Modules/Platform`)  | Catalog/billing/tenancy sirf CP ka kaam hai; product ko in ka pata bhi nahi chalna chahiye                                                |
+| `users`, `settings`, `audit_logs`, `document_sequences`                        | **`khattakbits/core`** (already hai) | CP aur products dono use karte hain; `Naming::next()` invoice numbering bhi isi se chalega                                                |
+| `security_events`                                                              | **`khattakbits/core`** (banana hai)  | D2 ne central kaha; CP aur har product apne central DB mein likhta hai. **Aaj maujood nahi** — koi migration nahi (NOT VERIFIED as built) |
+| `sessions`, `cache`, `jobs`, `personal_access_tokens`, `password_reset_tokens` | Laravel/host                         | Framework infra                                                                                                                           |
 
 **Ek code-level cheez core mein jayegi, table nahi:** entitlement snapshot ka **contract** (`KhattakBits\Core\Entitlements\EntitlementSet` — `fromArray()`, `flag()`, `limit()`, `quota()`, `hash()`). Wajah: CP snapshot *banata* hai, product usay *padhta* hai. Shape dono taraf same hona chahiye warna har product apna parser likhega. Tables CP mein rahengi.
 
-`security_events` (D2, `02` §5.2b): `id, kb_user_id nullable, tenant_id nullable, event, email_attempted, ip, user_agent, meta json, created_at` — append-only, 90 din retention (retention abhi **open question**, `02` §6).
+`security_events` (D2, `02` §5.2b): `id, kb_user_id nullable, tenant_id nullable, event, email_attempted, ip, user_agent, meta json, created_at` — append-only, **1 saal retention** (§8 D2, decided — `02` §6 ka open question yahan band). Prune: `security:prune-events --older-than=365d`, roz 03:00, chunked 1000, `created_at` par index lazmi.
+
 
 ### 1.3 Migration-ready columns
 
@@ -212,11 +213,15 @@ status              string(20)  index default 'provisioning'
 database_name       string(120) nullable        // product-side tenant DB (informational)
 provisioned_at      timestamp nullable
 last_seen_at        timestamp nullable
+billing_profile     json        nullable        // { business_name, address, city, ntn, strn, phone, email } — §8 D3
 notes               text        nullable
 softDeletes         deleted_at                  // archive, delete nahi
 unique (product_id, slug)
 index (owner_user_id, status)
 // Reserved slugs (D3: www, app, admin, api, auth, status, docs, mail, assets, cdn) app-level check
+// billing_profile "current" value hai; invoice par snapshot freeze hota hai
+// (invoices.billing_profile_snapshot), is liye baad mein address/NTN badalne se
+// purane invoices nahi badalte — jo legal record ke liye lazmi hai.
 
 // ── subscriptions ────────────────────────────────────────────────────────
 id                  bigIncrements
@@ -251,7 +256,7 @@ subscription_id     foreignId  index constrained('subscriptions') cascadeOnDelet
 type                string(40)  index            // created|trial_started|activated|renewed|
                                                  // upgraded|downgraded|plan_changed|past_due|
                                                  // entered_grace|expired|cancelled|reactivated|
-                                                 // suspended|resumed|seat_changed
+                                                 // suspended|resumed|seat_changed|refunded
 from_status         string(20)  nullable
 to_status           string(20)  nullable
 actor_type          string(10)                   // user|admin|system|payment
@@ -272,20 +277,33 @@ user_id             foreignId  nullable constrained('users') nullOnDelete   // b
 status              string(20)  index default 'draft'
                                                 // draft|open|paid|void|refunded|partially_refunded|uncollectible
 currency            char(3) default 'PKR'
-subtotal_minor      unsignedBigInteger default 0
-discount_minor      unsignedBigInteger default 0
-tax_minor           unsignedBigInteger default 0
-total_minor         unsignedBigInteger default 0
+subtotal_minor      unsignedBigInteger default 0   // = sum of positive items
+discount_minor      unsignedBigInteger default 0   // = abs(sum of negative discount|credit items)
+tax_minor           unsignedBigInteger default 0   // = sum of tax items
+total_minor         unsignedBigInteger default 0   // = subtotal + tax - discount  (>= 0, app invariant)
 amount_paid_minor   unsignedBigInteger default 0
-amount_due_minor    unsignedBigInteger default 0
+amount_due_minor    unsignedBigInteger default 0   // = total - amount_paid
 period_start        timestamp nullable
 period_end          timestamp nullable
 issued_at           timestamp nullable
 due_at              timestamp nullable  index
 paid_at             timestamp nullable
 idempotency_key     string(64)  nullable unique  // checkout session dedupe
+billing_profile_snapshot json   nullable         // frozen at issue: business name, address, NTN (§8 D3)
 notes               text        nullable
 // NO softDeletes — invoice void hota hai, delete nahi (legal record)
+//
+// TOTALS ITEMS SE COMPUTE HOTE HAIN, YAHAN UNSIGNED STORE HOTE HAIN:
+//   total_minor      = SUM(invoice_items.amount_minor)            <- signed sum, authoritative
+//   subtotal_minor   = SUM(items WHERE amount_minor > 0)
+//   discount_minor   = ABS(SUM(items WHERE amount_minor < 0 AND kind IN ('discount','credit')))
+//   tax_minor        = SUM(items WHERE kind = 'tax')
+//   amount_due_minor = total_minor - amount_paid_minor
+// Assertion (har recompute par, usi DB transaction ke andar):
+//   subtotal + tax - discount === total === SUM(items.amount_minor)  AND  total >= 0
+// total negative ho (discount > charges) to checkout block hota hai / invoice void ho kar
+// naya banta hai — negative invoice store nahi hoti. Items signed, header unsigned: is se
+// "kabhi negative total" DB-level par bhi impossible rehta hai.
 index (status, due_at), index (user_id, status)
 
 // ── invoice_items ────────────────────────────────────────────────────────
@@ -294,23 +312,26 @@ invoice_id          foreignId  index constrained('invoices') cascadeOnDelete
 kind                string(20)                   // plan|addon|proration|discount|tax|credit
 description         string(190)
 plan_id             foreignId  nullable constrained('plans') nullOnDelete
-quantity            unsignedInteger default 1
-unit_amount_minor   unsignedBigInteger
-amount_minor        unsignedBigInteger
+quantity            unsignedInteger default 1     // sign sirf amount par — do conventions nahi
+unit_amount_minor   bigInteger                    // SIGNED — discount/credit lines negative
+amount_minor        bigInteger                    // SIGNED — quantity * unit_amount_minor
 period_start        timestamp nullable
 period_end          timestamp nullable
 metadata            json        nullable
+// Signed kyunke discount, credit aur negative proration lines ka amount negative hota hai.
+// unsignedBigInteger hota to discount line insert hi na hoti (ya abs() se sign gum ho jata
+// aur total galat nikalta). Sum of signed items = invoice ka asli total.
 
 // ── payments ─────────────────────────────────────────────────────────────
 id                  bigIncrements
 invoice_id          foreignId  index constrained('invoices') cascadeOnDelete
-method              string(20)                   // manual_trx|easypaisa|jazzcash|card|bank_transfer
-gateway             string(30)  nullable         // easypaisa|jazzcash|stripe|null (Phase 1: null)
+method              string(10)                   // manual|gateway  (derived category, sirf reporting/filter)
+gateway             string(30)  NOT NULL         // manual_easypaisa|manual_jazzcash|jazzcash|easypaisa|card
 status              string(20)  index default 'pending'
                                                 // pending|awaiting_verification|verified|rejected|refunded|failed
 amount_minor        unsignedBigInteger
 currency            char(3) default 'PKR'
-reference           string(120) nullable  index  // TRX ID / gateway txn id
+reference           string(120) nullable  index  // TRX ID / gateway txn id — status >= awaiting_verification par NOT NULL (app)
 gateway_payload     json        nullable
 submitted_by        foreignId  nullable constrained('users') nullOnDelete
 verified_by         foreignId  nullable constrained('users') nullOnDelete
@@ -318,8 +339,17 @@ verified_at         timestamp nullable
 rejection_reason    string(190) nullable
 paid_at             timestamp nullable
 unique (gateway, reference)
-// MySQL mein NULL duplicate allowed hai, is liye Phase 1 (gateway null) par bhi chalta hai.
-// Do dafa same TRX ID = replay attempt → DB reject karega, app 409 de.
+// gateway NOT NULL hai — warna unique(gateway, reference) duplicate TRX IDs nahi rokti.
+// MySQL (aur SQLite) mein NULL values unique index mein distinct gine jate hain, is liye
+// gateway NULL hone par 'TX123' jitni baar chaho insert ho jata. Phase 1 mein gateway
+// 'manual_easypaisa' / 'manual_jazzcash' hai, NULL nahi — is liye constraint asal mein kaam karti hai.
+//
+// reference nullable hai kyunke payment row checkout par banti hai, TRX ID baad mein aati hai.
+// Jab tak reference NULL hai row unique index mein participate nahi karti (multiple pending
+// payments allowed). App invariant: status 'awaiting_verification' ya usse aage jaye to
+// reference NOT NULL ho, warna validation fail.
+//
+// Do dafa same TRX ID = replay attempt → DB reject (1062) → app 409, payment row create nahi hoti.
 index (status, created_at)
 
 // ── product_oauth_clients ────────────────────────────────────────────────
@@ -394,44 +424,44 @@ index (product_id, status)
 
 ### 2.1 States
 
-| State | Access | `access_mode` | Kaun set karta hai |
-|---|---|---|---|
-| `trialing` | Full | `full` | Checkout (agar `trial_days > 0`) ya admin |
-| `active` | Full | `full` | Payment verified |
-| `grace` | Read-only + export | `read_only` | Scheduler (`period_end` cross) |
-| `past_due` | Read-only | `read_only` | Payment failure (Phase 2 auto-charge) |
-| `expired` | Locked (billing + export only) | `locked` | Scheduler (`grace_ends_at` cross) |
-| `cancelled` | Locked | `locked` | User (period end par) ya admin (foran) |
-| `suspended` | Blocked — login bhi nahi | `blocked` | Sirf admin |
+| State       | Access                         | `access_mode` | Kaun set karta hai                        |
+| ----------- | ------------------------------ | ------------- | ----------------------------------------- |
+| `trialing`  | Full                           | `full`        | Checkout (agar `trial_days > 0`) ya admin |
+| `active`    | Full                           | `full`        | Payment verified                          |
+| `grace`     | Read-only + export             | `read_only`   | Scheduler (`period_end` cross)            |
+| `past_due`  | Read-only                      | `read_only`   | Payment failure (Phase 2 auto-charge)     |
+| `expired`   | Locked (billing + export only) | `locked`      | Scheduler (`grace_ends_at` cross)         |
+| `cancelled` | Locked                         | `locked`      | User (period end par) ya admin (foran)    |
+| `suspended` | Blocked — login bhi nahi       | `blocked`     | Sirf admin                                |
 
 `access_mode` product ko batata hai UI kya dikhaye. Product apna faisla nahi karta — snapshot se padhta hai, warna 5 products 5 tarah ka behaviour banayenge.
 
 ### 2.2 Transitions
 
-| From → To | Trigger | Actor | Side effects |
-|---|---|---|---|
-| `∅ → trialing` | checkout, `trial_days > 0` | user | invoice (0 amount) optional, `trial_started`, webhook `subscription.created` |
-| `∅ → active` | payment verified | payment event | period set, `activated`, webhook `subscription.created` |
-| `trialing → active` | payment verified | payment event | `trial_ends_at` null, period reset |
-| `trialing → grace` | `trial_ends_at` cross | scheduler | `entered_grace`, `grace_ends_at = now + grace_days`, webhook `subscription.grace` |
-| `trialing → cancelled` | user cancels | user | `cancelled_at`, access foran band (trial mein kuch pay nahi kiya) |
-| `active → grace` | `period_end` cross, koi payment nahi | scheduler | `entered_grace`, webhook `subscription.grace` |
-| `active → past_due` | auto-charge fail | payment event | sirf Phase 2; Phase 1 mein yeh state reachable nahi |
-| `active → active` | renewal verified | payment event | `period_start/end` shift, `renewed`, webhook `subscription.renewed` |
-| `active → cancelled` | `cancel_at_period_end` set + `period_end` cross | scheduler | access `period_end` tak full rehta hai |
-| `active → cancelled` | admin immediate cancel | admin | `cancelled_at = now`, access foran `locked`, audit + `security_events` |
-| `active → suspended` | abuse / fraud | admin | handoff refuse, resolve `blocked` |
-| `grace → active` | payment verified | payment event | grace clear, naya period |
-| `grace → expired` | `grace_ends_at` cross | scheduler | `expired`, webhook `subscription.expired` |
-| `grace → cancelled` | user cancels | user | — |
-| `past_due → active` | payment verified | payment event | — |
-| `past_due → grace` | dunning exhaust | scheduler | — |
-| `past_due → suspended` | admin | admin | — |
-| `expired → active` | payment verified | payment event | `reactivated`, naya period `now` se |
-| `expired → cancelled` | user / admin | user, admin | — |
-| `cancelled → active` | payment verified | payment event | `reactivated`; wahi row reuse hoti hai |
-| `suspended → active` | admin resume | admin | `resumed` |
-| `suspended → cancelled` | admin | admin | — |
+| From → To               | Trigger                                         | Actor         | Side effects                                                                      |
+| ----------------------- | ----------------------------------------------- | ------------- | --------------------------------------------------------------------------------- |
+| `∅ → trialing`          | checkout, `trial_days > 0`                      | user          | invoice (0 amount) optional, `trial_started`, webhook `subscription.created`      |
+| `∅ → active`            | payment verified                                | payment event | period set, `activated`, webhook `subscription.created`                           |
+| `trialing → active`     | payment verified                                | payment event | `trial_ends_at` null, period reset                                                |
+| `trialing → grace`      | `trial_ends_at` cross                           | scheduler     | `entered_grace`, `grace_ends_at = now + grace_days`, webhook `subscription.grace` |
+| `trialing → cancelled`  | user cancels                                    | user          | `cancelled_at`, access foran band (trial mein kuch pay nahi kiya)                 |
+| `active → grace`        | `period_end` cross, koi payment nahi            | scheduler     | `entered_grace`, webhook `subscription.grace`                                     |
+| `active → past_due`     | auto-charge fail                                | payment event | sirf Phase 2; Phase 1 mein yeh state reachable nahi                               |
+| `active → active`       | renewal verified                                | payment event | `period_start/end` shift, `renewed`, webhook `subscription.renewed`               |
+| `active → cancelled`    | `cancel_at_period_end` set + `period_end` cross | scheduler     | access `period_end` tak full rehta hai                                            |
+| `active → cancelled`    | admin immediate cancel                          | admin         | `cancelled_at = now`, access foran `locked`, audit + `security_events`            |
+| `active → suspended`    | abuse / fraud                                   | admin         | handoff refuse, resolve `blocked`                                                 |
+| `grace → active`        | payment verified                                | payment event | grace clear, naya period                                                          |
+| `grace → expired`       | `grace_ends_at` cross                           | scheduler     | `expired`, webhook `subscription.expired`                                         |
+| `grace → cancelled`     | user cancels                                    | user          | —                                                                                 |
+| `past_due → active`     | payment verified                                | payment event | —                                                                                 |
+| `past_due → grace`      | dunning exhaust                                 | scheduler     | —                                                                                 |
+| `past_due → suspended`  | admin                                           | admin         | —                                                                                 |
+| `expired → active`      | payment verified                                | payment event | `reactivated`, naya period `now` se                                               |
+| `expired → cancelled`   | user / admin                                    | user, admin   | —                                                                                 |
+| `cancelled → active`    | payment verified                                | payment event | `reactivated`; wahi row reuse hoti hai                                            |
+| `suspended → active`    | admin resume                                    | admin         | `resumed`                                                                         |
+| `suspended → cancelled` | admin                                           | admin         | —                                                                                 |
 
 **Har transition `subscription_events` mein ek row likhta hai** (`from_status`, `to_status`, `actor_type`, `data`). Koi bhi state change baghair event ke nahi — yeh invariant hai, is liye state machine ek hi service (`SubscriptionStateMachine::transition()`) se guzarta hai, controllers se nahi.
 
@@ -439,19 +469,59 @@ index (product_id, status)
 
 ### 2.3 Scheduler (single source of truth)
 
-Ek command, har 10 minute:
+Ek command, har 10 minute. **Order matter karta hai — cancel pehle, grace baad mein:**
 
 ```php
-// subscriptions:tick
-// 1. trialing/active WHERE current_period_end <= now → grace  (grace_ends_at = now + plan.grace_days)
-// 2. grace        WHERE grace_ends_at      <= now → expired
-// 3. active       WHERE cancel_at_period_end AND current_period_end <= now → cancelled
-// 4. webhook_deliveries WHERE status='pending' AND next_retry_at <= now → retry
+// subscriptions:tick  — isi tarteeb se chalao, warna user ka cancel ignore ho jata hai
+//
+// 1. CANCELLATIONS (sab se pehle)
+//    active WHERE cancel_at_period_end = 1 AND current_period_end <= now
+//           -> status = cancelled, cancelled_at = now, event 'cancelled' (actor system)
+//
+// 2. ACTIVE -> GRACE (sirf woh jo cancel nahi hue)
+//    active WHERE cancel_at_period_end = 0 AND current_period_end <= now
+//           -> status = grace, grace_ends_at = now + plan.grace_days, event 'entered_grace'
+//
+// 3. TRIAL -> GRACE (trial_ends_at par, current_period_end par NAHI)
+//    trialing WHERE trial_ends_at <= now
+//           -> status = grace, grace_ends_at = now + plan.grace_days, event 'entered_grace'
+//
+// 4. GRACE -> EXPIRED
+//    grace WHERE grace_ends_at <= now
+//           -> status = expired, event 'expired'
+//
+// 5. WEBHOOK RETRIES
+//    webhook_deliveries WHERE status = 'pending' AND next_retry_at <= now
 ```
 
-Idempotency: har query `WHERE status = '<expected>'` ke saath chalti hai, is liye do workers aik hi row par race karein to sirf ek `UPDATE` affect karta hai (affected rows = 1). Double webhook nahi jayega.
+**Step 1 pehle kyun:** agar step 2 pehle chale to `active` + `cancel_at_period_end = 1` wala row `grace` mein chala jayega, aur step 1 ka `WHERE status = 'active'` usay dobara nahi dhoond payega — user ne cancel kiya tha magar subscription grace mein baith kar renew banner dikhati rahegi, aur `grace_ends_at` cross hone par `expired` ho jayegi (cancel ki jagah). Dohra defence: step 2 mein `cancel_at_period_end = 0` explicit hai, is liye query order badal bhi jaye to double-processing nahi hoti.
+
+**`trialing` ke liye `trial_ends_at`, `current_period_end` nahi:** trial ke dauraan `current_period_end` ka koi matlab nahi (period abhi shuru hi nahi hua, ya trial ke end par shuru hoga). Purana query `trialing/active WHERE current_period_end <= now` trial rows ko ya foran grace mein bhej deta tha (agar `current_period_end` = trial start) ya kabhi nahi bhejta tha (agar NULL). `trial_ends_at` hi trial ka asli clock hai — `trialing → active` transition usay `null` kar deta hai (§2.2).
+
+Idempotency: har query `WHERE status = '<expected>'` ke saath chalti hai, is liye do workers aik hi row par race karein to sirf ek `UPDATE` affect karta hai (affected rows = 1). Double webhook nahi jayega. Steps 1–4 aik hi DB transaction mein nahi — har step ka apna transaction hai, taake step 3 fail ho to steps 1–2 ka kaam na jaye.
 
 **Grace ke andar writes:** `grace` aur `past_due` = read-only. Product `access_mode: read_only` par naye records block karta hai, magar read + export + payment allow. `expired`/`cancelled` = `locked` (billing + export only). `suspended` = `blocked` (handoff refuse hota hai, `02` §5.4.1 rule 5).
+
+### 2.4 Product-side contract
+
+Product `access_mode` par chalta hai — `status` string par apna faisla **nahi** karta. Mapping:
+
+| Trigger | `access_mode` | Product ka behaviour |
+|---|---|---|
+| `subscription.created`, `subscription.renewed`, `subscription.activated` | `full` | Sab kuch allowed |
+| `subscription.grace` | `read_only` | Naye records / edits block; read + export + "Renew" CTA allowed |
+| `subscription.expired` | `locked` | Sirf billing + data export; koi write nahi |
+| `subscription.cancelled` | `locked` | Same as expired |
+| `subscription.suspended` | `blocked` | Handoff refuse; logged-in session terminate; koi page nahi |
+| **missing / unknown `access_mode`** | — | **`read_only` treat karo** |
+
+**Unknown value par `read_only` kyun, `full` ya `locked` nahi:**
+
+- `full` ghalat hai — naya ya unknown state (kal ka `paused`, ya partial rollout) par paying customer ko free access mil jayega. Fail-open = revenue leak.
+- `locked` bhi ghalat hai — snapshot parse bug ya naya mode aane par paying customer ka kaam ruk jayega. Support ticket jo product ki ghalti nahi.
+- `read_only` beech ka rasta hai: data safe rehta hai, customer kaam dekh sakta hai, aur product **"Subscription status verify nahi ho saka"** banner dikha kar resolve retry karta hai (5 min TTL, §3.4). Fail-closed for writes, fail-open for reads.
+
+**Sath hi:** `access_mode` na mile to product apne last good snapshot (`kb_snapshot`, `02` §5.1) se chalta hai, 72h tak — aur us snapshot ka `access_mode` bhi missing ho to `read_only`. Yeh `02` §1.1 point 3 ka recovery path hai.
 
 ---
 
@@ -459,13 +529,13 @@ Idempotency: har query `WHERE status = '<expected>'` ke saath chalti hai, is liy
 
 ### 3.1 Inputs aur precedence
 
-| # | Input | Kya deta hai | Precedence |
-|---|---|---|---|
-| 1 | `plan_entitlements` | key, value, unit, reset | base — jo plan grant karta hai |
-| 2 | `product_features` | `type`, `unit`, `reset_period`, `default_value` | **typing jeet jati hai** — plan row ka `type` sirf fallback |
-| 3 | `product_modules` | `status`, `removed_at` | module removed → key drop (§6) |
-| 4 | `plans.seat_limit` + `subscriptions.seats` | effective seats | `min()` |
-| 5 | `subscriptions.status` | `access_mode` | §2.1 table |
+| # | Input                                      | Kya deta hai                                    | Precedence                                                  |
+| - | ------------------------------------------ | ----------------------------------------------- | ----------------------------------------------------------- |
+| 1 | `plan_entitlements`                        | key, value, unit, reset                         | base — jo plan grant karta hai                              |
+| 2 | `product_features`                         | `type`, `unit`, `reset_period`, `default_value` | **typing jeet jati hai** — plan row ka `type` sirf fallback |
+| 3 | `product_modules`                          | `status`, `removed_at`                          | module removed → key drop (§6)                              |
+| 4 | `plans.seat_limit` + `subscriptions.seats` | effective seats                                 | `min()`                                                     |
+| 5 | `subscriptions.status`                     | `access_mode`                                   | §2.1 table                                                  |
 
 Rule: `type` **product_features** se aata hai jab `product_feature_id` maujood ho. Wajah: plan editor ghalti se `warehouses` ko `flag` bana de to resolution nahi badalni chahiye — catalog sach hai.
 
@@ -513,17 +583,19 @@ Step 4 ka exact matlab: **removed module un subscriptions ko nahi marti jinka cu
 
 Flat `flags` / `limits` / `quotas` maps — teen alag maps isliye ke client ko `typeof` check nahi karna padta. `limits` mein `null` = unlimited (JSON `-1` nahi, kyunke `-1` ko client ghalti se "1 se kam" samajh sakta hai).
 
-`entitlements_hash` payload ka `generated_at` **shamil nahi** karta (warna har request par hash badal jaye). Hash ka input: upar wala poora object minus `version` — `version` integer monotonic hai, hash content-addressed hona chahiye. Canonical JSON = recursive `ksort` + `JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE` + no whitespace.
+|                                                                                                                                                                                                                                                                                                          |                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `entitlements_hash` payload ka `generated_at` **shamil nahi** karta (warna har request par hash badal jaye). Hash ka input: upar wala poora object minus `version` — `version` integer monotonic hai, hash content-addressed hona chahiye. Canonical JSON = recursive `ksort` + \`JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE\` + no whitespace. |
 
 ### 3.4 Cache
 
-| Key | Value | TTL | Invalidate |
-|---|---|---|---|
-| `kb:ent:{tenant_id}` | poora snapshot JSON | 300s | har subscription write (plan/status/seats) |
-| `kb:ent:{tenant_id}:v` | `entitlements_version` | 3600s | same |
-| `kb:plan:{plan_id}` | plan + prices + entitlements array | 3600s | plan/price/entitlement save |
-| `kb:resolve:{tenant_id}:neg` | `blocked` / `unknown` marker | 30s | tenant activate |
-| `kb:store:{product_id}` | storefront product+plans (public) | 600s | product/plan save |
+| Key                          | Value                              | TTL   | Invalidate                                 |
+| ---------------------------- | ---------------------------------- | ----- | ------------------------------------------ |
+| `kb:ent:{tenant_id}`         | poora snapshot JSON                | 300s  | har subscription write (plan/status/seats) |
+| `kb:ent:{tenant_id}:v`       | `entitlements_version`             | 3600s | same                                       |
+| `kb:plan:{plan_id}`          | plan + prices + entitlements array | 3600s | plan/price/entitlement save                |
+| `kb:resolve:{tenant_id}:neg` | `blocked` / `unknown` marker       | 30s   | tenant activate                            |
+| `kb:store:{product_id}`      | storefront product+plans (public)  | 600s  | product/plan save                          |
 
 **TTL safety net hai, mechanism nahi.** Asli invalidation active hai: subscription write → `entitlements_version++` → `Cache::forget("kb:ent:{tenant}")` → webhook dispatch, sab ek DB transaction ke baad (transaction ke andar cache forget nahi, warna rollback par stale cache reh jata hai).
 
@@ -541,36 +613,36 @@ Har list screen: `TableQuery::json($query, $request, [...], XxxRow::class)` + `u
 
 ### 4.1 Screens
 
-| # | Screen | Path | Permission | Reused components |
-|---|---|---|---|---|
-| 1 | Products list | `/platform/products` | `platform.products.view` | `ListPage`, `ListView`, `useServerList`, `StatusBadge` |
-| 2 | Product form | `/platform/products/create`, `/platform/products/{product}` | `.create` / `.update` | `FormPage`, `FormCard`, `FormSection`, `FormGrid`, `Field`, `Input`, `Select` |
-| 3 | Modules list | `/platform/products/{product}/modules` | `platform.modules.view` | `ListPage`, `ListView`, `RowAction`, `StatusBadge` |
-| 4 | Module form | `/platform/products/{product}/modules/{module}` | `platform.modules.update` | `FormPage`, `FormSection` |
-| 5 | Features list + form | `/platform/products/{product}/features` | `platform.features.view` | `ListPage`, `ListView`, `Modal` (inline edit) |
-| 6 | Doctypes list + form | `/platform/products/{product}/doctypes` | `platform.doctypes.view` | `ListPage`, `ListView`, `DocStatusBadge` |
-| 7 | Reports list + form | `/platform/products/{product}/reports` | `platform.reports.view` | `ListPage`, `ListView` |
-| 8 | Plans list | `/platform/plans` | `platform.plans.view` | `ListPage`, `ListView` (filter: product, status) |
-| 9 | Plan form | `/platform/plans/create`, `/platform/plans/{plan}` | `.create` / `.update` | `FormPage`, `FormSection`, `LineItems` (prices grid) |
-| 10 | Plan entitlements | `/platform/plans/{plan}/entitlements` | `platform.plans.entitlements` | `FormPage` + `PermissionMatrix` (flags) + `Input` grid (limits/quotas) |
-| 11 | Subscriptions list | `/platform/subscriptions` | `platform.subscriptions.view` | `ListPage`, `ListView` (filters: status, product, period) |
-| 12 | Subscription detail | `/platform/subscriptions/{subscription}` | `.view` | `Page`, `SubNav` (Overview/Events/Invoices), `ReadField`, `DocumentActivity` (event timeline) |
-| 13 | Subscription actions | `POST .../activate`, `/suspend`, `/resume`, `/cancel`, `/renew`, `/change-plan` | `.update` | `Modal`, `ConfirmDialog`, `Select` |
-| 14 | Invoices list | `/platform/invoices` | `platform.invoices.view` | `ListPage`, `ListView` |
-| 15 | Invoice detail / print | `/platform/invoices/{invoice}` | `.view` | `ReportPage`, `ReportGrid`, `ReadField` |
-| 16 | Manual invoice | `/platform/invoices/create` | `platform.invoices.create` | `FormPage`, `LineItems` |
-| 17 | Payments list | `/platform/payments` | `platform.payments.view` | `ListPage`, `ListView` |
-| 18 | **TRX verification queue** | `/platform/payments/queue` | `platform.payments.verify` | `ListPage`, `ListView`, `RowAction`, `ConfirmDialog`, `Modal` (reject reason) |
-| 19 | Tenants overview | `/platform/tenants` | `platform.tenants.view` | `ListPage`, `ListView` (filters: product, status, owner) |
-| 20 | Tenant detail | `/platform/tenants/{tenant}` | `.view` | `Page`, `SubNav`, `ReadField` |
-| 21 | OAuth clients | `/platform/oauth-clients` | `platform.oauth_clients.view` | `ListPage`, `ListView`, `Modal` (secret shown once) |
-| 22 | OAuth client form | `/platform/oauth-clients/{client}` | `.update` | `FormPage`, `FormSection` |
-| 23 | Webhook endpoints | `/platform/webhooks` | `platform.webhooks.view` | `ListPage`, `ListView` |
-| 24 | Webhook deliveries | `/platform/webhooks/{endpoint}/deliveries` | `.view` | `ListPage`, `ListView`, `Modal` (payload + response) |
-| 25 | Users + product access | `/platform/users` | `platform.users.view` | `ListPage`, `ListView`, `Select` (role inline) |
-| 26 | User product access | `/platform/users/{user}` | `.update` | `Page`, `SubNav`, `ListView` |
-| 27 | Overview / KPIs | `/platform` | `platform.dashboard.view` | `Page`, `ReportGrid`, `ReportPage` |
-| 28 | Storefront settings | `/platform/storefront` | `platform.storefront.update` | `SettingsPage`, `FormSection` |
+| #  | Screen                     | Path                                                                            | Permission                    | Reused components                                                                             |
+| -- | -------------------------- | ------------------------------------------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------- |
+| 1  | Products list              | `/platform/products`                                                            | `platform.products.view`      | `ListPage`, `ListView`, `useServerList`, `StatusBadge`                                        |
+| 2  | Product form               | `/platform/products/create`, `/platform/products/{product}`                     | `.create` / `.update`         | `FormPage`, `FormCard`, `FormSection`, `FormGrid`, `Field`, `Input`, `Select`                 |
+| 3  | Modules list               | `/platform/products/{product}/modules`                                          | `platform.modules.view`       | `ListPage`, `ListView`, `RowAction`, `StatusBadge`                                            |
+| 4  | Module form                | `/platform/products/{product}/modules/{module}`                                 | `platform.modules.update`     | `FormPage`, `FormSection`                                                                     |
+| 5  | Features list + form       | `/platform/products/{product}/features`                                         | `platform.features.view`      | `ListPage`, `ListView`, `Modal` (inline edit)                                                 |
+| 6  | Doctypes list + form       | `/platform/products/{product}/doctypes`                                         | `platform.doctypes.view`      | `ListPage`, `ListView`, `DocStatusBadge`                                                      |
+| 7  | Reports list + form        | `/platform/products/{product}/reports`                                          | `platform.reports.view`       | `ListPage`, `ListView`                                                                        |
+| 8  | Plans list                 | `/platform/plans`                                                               | `platform.plans.view`         | `ListPage`, `ListView` (filter: product, status)                                              |
+| 9  | Plan form                  | `/platform/plans/create`, `/platform/plans/{plan}`                              | `.create` / `.update`         | `FormPage`, `FormSection`, `LineItems` (prices grid)                                          |
+| 10 | Plan entitlements          | `/platform/plans/{plan}/entitlements`                                           | `platform.plans.entitlements` | `FormPage` + `PermissionMatrix` (flags) + `Input` grid (limits/quotas)                        |
+| 11 | Subscriptions list         | `/platform/subscriptions`                                                       | `platform.subscriptions.view` | `ListPage`, `ListView` (filters: status, product, period)                                     |
+| 12 | Subscription detail        | `/platform/subscriptions/{subscription}`                                        | `.view`                       | `Page`, `SubNav` (Overview/Events/Invoices), `ReadField`, `DocumentActivity` (event timeline) |
+| 13 | Subscription actions       | `POST .../activate`, `/suspend`, `/resume`, `/cancel`, `/renew`, `/change-plan` | `.update`                     | `Modal`, `ConfirmDialog`, `Select`                                                            |
+| 14 | Invoices list              | `/platform/invoices`                                                            | `platform.invoices.view`      | `ListPage`, `ListView`                                                                        |
+| 15 | Invoice detail / print     | `/platform/invoices/{invoice}`                                                  | `.view`                       | `ReportPage`, `ReportGrid`, `ReadField`                                                       |
+| 16 | Manual invoice             | `/platform/invoices/create`                                                     | `platform.invoices.create`    | `FormPage`, `LineItems`                                                                       |
+| 17 | Payments list              | `/platform/payments`                                                            | `platform.payments.view`      | `ListPage`, `ListView`                                                                        |
+| 18 | **TRX verification queue** | `/platform/payments/queue`                                                      | `platform.payments.verify`    | `ListPage`, `ListView`, `RowAction`, `ConfirmDialog`, `Modal` (reject reason)                 |
+| 19 | Tenants overview           | `/platform/tenants`                                                             | `platform.tenants.view`       | `ListPage`, `ListView` (filters: product, status, owner)                                      |
+| 20 | Tenant detail              | `/platform/tenants/{tenant}`                                                    | `.view`                       | `Page`, `SubNav`, `ReadField`                                                                 |
+| 21 | OAuth clients              | `/platform/oauth-clients`                                                       | `platform.oauth_clients.view` | `ListPage`, `ListView`, `Modal` (secret shown once)                                           |
+| 22 | OAuth client form          | `/platform/oauth-clients/{client}`                                              | `.update`                     | `FormPage`, `FormSection`                                                                     |
+| 23 | Webhook endpoints          | `/platform/webhooks`                                                            | `platform.webhooks.view`      | `ListPage`, `ListView`                                                                        |
+| 24 | Webhook deliveries         | `/platform/webhooks/{endpoint}/deliveries`                                      | `.view`                       | `ListPage`, `ListView`, `Modal` (payload + response)                                          |
+| 25 | Users + product access     | `/platform/users`                                                               | `platform.users.view`         | `ListPage`, `ListView`, `Select` (role inline)                                                |
+| 26 | User product access        | `/platform/users/{user}`                                                        | `.update`                     | `Page`, `SubNav`, `ListView`                                                                  |
+| 27 | Overview / KPIs            | `/platform`                                                                     | `platform.dashboard.view`     | `Page`, `ReportGrid`, `ReportPage`                                                            |
+| 28 | Storefront settings        | `/platform/storefront`                                                          | `platform.storefront.update`  | `SettingsPage`, `FormSection`                                                                 |
 
 ### 4.2 Route registration (Settings pattern)
 
@@ -660,32 +732,32 @@ return [
 
 **Is liye storefront = Blade, admin/app = Inertia.** Yeh split jaan boojh kar hai:
 
-| Surface | Renderer | Kyun |
-|---|---|---|
-| `/`, `/products/*`, `/pricing`, legal pages | **Blade** | SEO: server HTML, meta tags, JSON-LD, sitemap |
-| `/checkout/*` | **Blade + Alpine-free plain JS** | Payment forms par JS dependency kam rakhein |
-| `/login`, `/register`, `/password/*` | **Inertia** (already maujood `Auth/Login.vue`) | App shell, 3D login scene |
-| `/platform/*`, `/settings/*` | Inertia | Internal, SEO irrelevant |
+| Surface                                     | Renderer                                       | Kyun                                          |
+| ------------------------------------------- | ---------------------------------------------- | --------------------------------------------- |
+| `/`, `/products/*`, `/pricing`, legal pages | **Blade**                                      | SEO: server HTML, meta tags, JSON-LD, sitemap |
+| `/checkout/*`                               | **Blade + Alpine-free plain JS**               | Payment forms par JS dependency kam rakhein   |
+| `/login`, `/register`, `/password/*`        | **Inertia** (already maujood `Auth/Login.vue`) | App shell, 3D login scene                     |
+| `/platform/*`, `/settings/*`                | Inertia                                        | Internal, SEO irrelevant                      |
 
 Blade views `resources/views/storefront/` mein; layout `resources/views/storefront/layout.blade.php` (Tailwind same build se, `@vite(['resources/css/app.css'])`).
 
 ### 5.2 Pages + route names
 
-| Route name | Path | Auth | Kaam |
-|---|---|---|---|
-| `storefront.home` | `/` | guest | Products grid + trust signals |
-| `storefront.pricing` | `/pricing` | guest | Saare public plans, product-wise |
-| `storefront.product` | `/products/{product:key}` | guest | Product detail, modules/features list |
-| `storefront.product.pricing` | `/products/{product:key}/pricing` | guest | Us product ke plans, monthly/yearly toggle |
-| `storefront.legal.terms` | `/terms` | guest | — |
-| `storefront.legal.privacy` | `/privacy` | guest | — |
-| `storefront.legal.refund` | `/refund-policy` | guest | Manual TRX ke liye lazmi |
-| `storefront.contact` | `/contact` | guest | — |
-| `checkout.start` | `POST /checkout` | auth | Plan + slug → invoice draft |
-| `checkout.show` | `/checkout/{invoice:number}` | auth | Order summary + billing form |
-| `checkout.pay` | `/checkout/{invoice:number}/pay` | auth | Phase 1: TRX ID form |
-| `checkout.status` | `/checkout/{invoice:number}/status` | auth | "Verification pending" + polling |
-| `checkout.open` | `/products/{product:key}/open` | auth | OAuth kickoff (`02` §1.2 step 5) |
+| Route name                   | Path                                | Auth  | Kaam                                       |
+| ---------------------------- | ----------------------------------- | ----- | ------------------------------------------ |
+| `storefront.home`            | `/`                                 | guest | Products grid + trust signals              |
+| `storefront.pricing`         | `/pricing`                          | guest | Saare public plans, product-wise           |
+| `storefront.product`         | `/products/{product:key}`           | guest | Product detail, modules/features list      |
+| `storefront.product.pricing` | `/products/{product:key}/pricing`   | guest | Us product ke plans, monthly/yearly toggle |
+| `storefront.legal.terms`     | `/terms`                            | guest | —                                          |
+| `storefront.legal.privacy`   | `/privacy`                          | guest | —                                          |
+| `storefront.legal.refund`    | `/refund-policy`                    | guest | Manual TRX ke liye lazmi                   |
+| `storefront.contact`         | `/contact`                          | guest | —                                          |
+| `checkout.start`             | `POST /checkout`                    | auth  | Plan + slug → invoice draft                |
+| `checkout.show`              | `/checkout/{invoice:number}`        | auth  | Order summary + billing form               |
+| `checkout.pay`               | `/checkout/{invoice:number}/pay`    | auth  | Phase 1: TRX ID form                       |
+| `checkout.status`            | `/checkout/{invoice:number}/status` | auth  | "Verification pending" + polling           |
+| `checkout.open`              | `/products/{product:key}/open`      | auth  | OAuth kickoff (`02` §1.2 step 5)           |
 
 `{product:key}` route binding — URLs mein `mizaan`, id nahi. `{invoice:number}` bhi same wajah.
 
@@ -734,16 +806,16 @@ sequenceDiagram
 
 ### 5.4 SEO
 
-| Cheez | Kaise |
-|---|---|
-| `<title>`, `<meta description>` | Blade `@section`, per-page |
-| Canonical | `https://{cp-domain}/products/{key}` — query strings (`?interval=year`) canonical se strip |
-| Open Graph / Twitter | `og:title`, `og:description`, `og:image` (`logo_path` se 1200×630 generated — **NOT VERIFIED**, image pipeline maujood nahi) |
-| JSON-LD | `Product` + `Offer` per plan price, `AggregateOffer` pricing page par. `priceCurrency: "PKR"`, `price` major units (schema.org decimal, minor nahi) |
-| `sitemap.xml` | `GET /sitemap.xml` — active products + public plans + legal pages; `lastmod` = `products.updated_at` |
-| `robots.txt` | `Disallow: /platform, /checkout, /settings, /login, /register`; `Sitemap:` line |
-| Pricing crawlability | Blade SSR + **koi auth gate nahi** + prices HTML mein (JS toggle sirf display badle, dono prices markup mein hon) |
-| Hreflang | Filhaal nahi (single locale `en`). Phase 2 |
+| Cheez                           | Kaise                                                                                                                                               |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<title>`, `<meta description>` | Blade `@section`, per-page                                                                                                                          |
+| Canonical                       | `https://{cp-domain}/products/{key}` — query strings (`?interval=year`) canonical se strip                                                          |
+| Open Graph / Twitter            | `og:title`, `og:description`, `og:image` (`logo_path` se 1200×630 generated — **NOT VERIFIED**, image pipeline maujood nahi)                        |
+| JSON-LD                         | `Product` + `Offer` per plan price, `AggregateOffer` pricing page par. `priceCurrency: "PKR"`, `price` major units (schema.org decimal, minor nahi) |
+| `sitemap.xml`                   | `GET /sitemap.xml` — active products + public plans + legal pages; `lastmod` = `products.updated_at`                                                |
+| `robots.txt`                    | `Disallow: /platform, /checkout, /settings, /login, /register`; `Sitemap:` line                                                                     |
+| Pricing crawlability            | Blade SSR + **koi auth gate nahi** + prices HTML mein (JS toggle sirf display badle, dono prices markup mein hon)                                   |
+| Hreflang                        | Filhaal nahi (single locale `en`). Phase 2                                                                                                          |
 
 **`Cache-Control`:** storefront pages `public, max-age=600` + `ETag` from `kb:store:{product_id}` hash. `/checkout/*` aur `/platform/*` par `no-store` lazmi (invoice numbers URL mein hain).
 
@@ -786,11 +858,11 @@ Product repo root par `kb-product.json`, `php artisan khattakbits:manifest` se g
 
 `POST /api/v1/products/{key}/manifest`
 
-| Header | Value |
-|---|---|
+| Header           | Value                                              |
+| ---------------- | -------------------------------------------------- |
 | `X-KB-Signature` | `t={ts},v1=HMAC_SHA256(secret, "{ts}.{raw_body}")` |
-| `X-KB-Product` | `mizaan` |
-| `Content-Type` | `application/json` |
+| `X-KB-Product`   | `mizaan`                                           |
+| `Content-Type`   | `application/json`                                 |
 
 - Secret per product (`products` ke saath store, `encrypted` cast) — webhook secret se **alag** key, kyunke blast radius alag hai (manifest write vs event read).
 - Timestamp 300s window (replay protection) — same rule jo webhook receiver par hai.
@@ -799,14 +871,14 @@ Product repo root par `kb-product.json`, `php artisan khattakbits:manifest` se g
 
 ### 6.3 Diff rules
 
-| Manifest | DB | Action |
-|---|---|---|
-| Module present | absent | `INSERT status=active` |
-| Module present | present | `UPDATE name/description/is_core` only |
-| Module present, `status=removed` | present | `status=active`, `removed_at=null` (module wapas aya) |
-| Module **absent** | present | `status=removed`, `removed_at=now()` — **DELETE NAHI** |
-| Feature/doctype/report absent | present | `status=removed` (same rule) |
-| Doctype `permission_prefix` changed | — | warning + apply (permission rename product ka kaam hai) |
+| Manifest                            | DB      | Action                                                  |
+| ----------------------------------- | ------- | ------------------------------------------------------- |
+| Module present                      | absent  | `INSERT status=active`                                  |
+| Module present                      | present | `UPDATE name/description/is_core` only                  |
+| Module present, `status=removed`    | present | `status=active`, `removed_at=null` (module wapas aya)   |
+| Module **absent**                   | present | `status=removed`, `removed_at=now()` — **DELETE NAHI**  |
+| Feature/doctype/report absent       | present | `status=removed` (same rule)                            |
+| Doctype `permission_prefix` changed | —       | warning + apply (permission rename product ka kaam hai) |
 
 Hard delete kabhi nahi — `plan_entitlements.product_feature_id` FK aur audit history toot jati hai. Prune alag command se, 90 din baad, sirf jab koi reference na ho.
 
@@ -829,35 +901,106 @@ Yeh sab se aam real case hai (product ne payroll hata diya, 40 tenants ne pay ki
 
 **Scope note:** `stancl/tenancy` **is CP mein nahi** — multi-DB tenancy product apps mein hai (`02` §5). CP single DB hai. Is liye yahan koi `tenants:migrate`, tenant connection, ya domain resolver ka kaam nahi. CP sirf product ko `POST /provision` call karta hai aur `kb_tenant_id` wapas leta hai — woh integration point S3 mein hai, tenancy implementation nahi.
 
-| Sprint | Kaam | Effort | Dependency |
-|---|---|---|---|
-| **S0** | MySQL confirm + `security_events` (core) + Passport install/config + `khattakbits:manifest` command skeleton | 2d | — |
-| **S1** | Catalog: `products`, `product_modules`, `product_features`, `product_doctypes`, `product_reports` + admin screens 1–7 + manifest sync (§6) | 6d | S0 |
-| **S2** | Plans + entitlements: `plans`, `plan_prices`, `plan_entitlements`, resolver + hash + cache (§3), `EntitlementSet` contract in core, admin screens 8–10 | 6d | S1 |
-| **S3** | Tenancy + subscription core: `tenants_registry`, `subscriptions`, `subscription_events`, state machine (§2), scheduler command, provisioning client, admin screens 11–13, 19–20 | 7d | S2 |
-| **S4** | Billing: `invoices`, `invoice_items`, `payments`, TRX queue + verification, `Naming` invoice series, admin screens 14–18 | 6d | S3 |
-| **S5** | Storefront: Blade layout + 8 pages + SEO (§5.4) + checkout flow + transactional emails | 6d | S2 (prices), S4 (pay) |
-| **S6** | OAuth: Passport clients, `product_oauth_clients`, `/oauth/userinfo`, `GET /api/v1/subscriptions/resolve` (ETag/304), `/api/v1/subscriptions/renew-link`, admin screens 21–22 | 5d | S3 |
-| **S7** | Webhooks: `webhook_endpoints`, `webhook_deliveries`, HMAC signing, retries + backoff, dead-letter, admin screens 23–24 | 4d | S3 |
-| **S8** | Access + polish: `kb_user_product_access`, screens 25–28, KPI dashboard, `platform:rehash` command | 4d | S4 |
-| **S9** | Hardening: rate limits, audit coverage, feature tests, seeders (demo product + 3 plans), docs | 5d | all |
+| Sprint | Kaam                                                                                                                                                                            | Effort | Dependency            |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | --------------------- |
+| **S0** | MySQL confirm + `security_events` (core) + Passport install/config + `khattakbits:manifest` command skeleton                                                                    | 2d     | —                     |
+| **S1** | Catalog: `products`, `product_modules`, `product_features`, `product_doctypes`, `product_reports` + admin screens 1–7 + manifest sync (§6)                                      | 6d     | S0                    |
+| **S2** | Plans + entitlements: `plans`, `plan_prices`, `plan_entitlements`, resolver + hash + cache (§3), `EntitlementSet` contract in core, admin screens 8–10                          | 6d     | S1                    |
+| **S3** | Tenancy + subscription core: `tenants_registry`, `subscriptions`, `subscription_events`, state machine (§2), scheduler command, provisioning client, admin screens 11–13, 19–20 | 7d     | S2                    |
+| **S4** | Billing: `invoices`, `invoice_items`, `payments`, TRX queue + verification, `Naming` invoice series, admin screens 14–18                                                        | 6d     | S3                    |
+| **S5** | Storefront: Blade layout + 8 pages + SEO (§5.4) + checkout flow + transactional emails                                                                                          | 6d     | S2 (prices), S4 (pay) |
+| **S6** | OAuth: Passport clients, `product_oauth_clients`, `/oauth/userinfo`, `GET /api/v1/subscriptions/resolve` (ETag/304), `/api/v1/subscriptions/renew-link`, admin screens 21–22    | 5d     | S3                    |
+| **S7** | Webhooks: `webhook_endpoints`, `webhook_deliveries`, HMAC signing, retries + backoff, dead-letter, admin screens 23–24                                                          | 4d     | S3                    |
+| **S8** | Access + polish: `kb_user_product_access`, screens 25–28, KPI dashboard, `platform:rehash` command                                                                              | 4d     | S4                    |
+| **S9** | Hardening: rate limits, audit coverage, feature tests, seeders (demo product + 3 plans), docs                                                                                   | 5d     | all                   |
 
 **Total ≈ 51 days ≈ 10 hafte solo; 2 devs par ~5.5 hafte** (S5/S6/S7 parallel ho sakte hain, S1→S2→S3 sequential hai).
 
 **Critical path:** S1 → S2 → S3 → S4 → S6. S5 S2 ke baad shuru ho sakta hai (prices mil jate hain), magar checkout ka "pay" step S4 par depend karta hai — is liye S5 ko do hisson mein torta hoon: pages+SEO (S2 ke baad) aur checkout (S4 ke baad).
 
 **Phase 1 vs Phase 2:**
-- Phase 1 (S0–S9): manual TRX only. `payments.gateway = null`, `method = manual_trx`, admin verification queue.
+
+- Phase 1 (S0–S9): manual TRX only. `gateway` = `manual_easypaisa` / `manual_jazzcash`, `method = manual`, admin verification queue. `gateway` **NOT NULL** hai — Phase 1 mein bhi null nahi, warna duplicate-TRX constraint bekaar ho jati hai (§1.3).
 - Phase 2: gateway APIs (EasyPaisa/JazzCash/card) — `payments` schema already ready (`gateway`, `gateway_payload`, `unique(gateway, reference)`), sirf callback controller + signature verify + `past_due` transitions chahiye. ~8d.
+
+### 7.1 Test plan (must-have cases)
+
+S9 ka "feature tests" isi list ko cover karta hai. Har case ek regression jo paisa ya access galat kar sakta hai.
+
+| # | Test | Kya prove karta hai |
+|---|---|---|
+| **T1** | **Duplicate TRX rejected** — same `gateway` + `reference` par doosra `payments` insert | **DB unique (1062) → app 409; ek hi payment row bachti hai. Yeh test `gateway` NOT NULL ke baghair fail hoga — isi liye Phase 1 mein bhi null nahi.** |
+| T2 | Same TRX ID, different gateway | Allowed — `manual_easypaisa` TX1 aur `jazzcash` TX1 do alag rails hain, collision nahi |
+| T3 | Do pending payments, `reference` NULL | Dono insert hoti hain (checkout par row pehle banti hai, TRX baad mein) |
+| T4 | `awaiting_verification` baghair `reference` | Validation fail — app invariant, DB par nahi |
+| T5 | `active` + `cancel_at_period_end = 1` + `period_end` past → tick | `cancelled`, **`grace` nahi** (scheduler ordering) |
+| T6 | `trialing` + `trial_ends_at` past + `current_period_end` future → tick | `grace` (`trial_ends_at` clock, `current_period_end` nahi) |
+| T7 | `grace` + `grace_ends_at` past → tick | `expired`, event `expired` |
+| T8 | Invoice totals: items `[+1500000, -200000]` | `subtotal 1500000`, `discount 200000`, `total 1300000`, `SUM(items)` ke barabar |
+| T9 | Discount > charges (total negative) | Checkout block / invoice void — negative total store nahi hoti |
+| T10 | `entitlements_hash` stability | Same inputs, different array key order → same hash; `version` badalne par hash same |
+| T11 | Removed module grandfather | `period_start < removed_at` → key snapshot mein maujood; `period_start >= removed_at` → key gayab |
+| T12 | `resolve` with matching `If-None-Match` | `304`, koi body nahi, koi DB write nahi |
 
 ---
 
-## 8. Open questions
+## 8. Decisions (resolved)
 
-1. **`plans.billing_mode = per_seat`** — seats ka source kya hai? CP ko product se `seats.used` chahiye (resolve response mein `used` field hai, magar bharta kaun hai?). Do options: product push kare (`POST /api/v1/usage`), ya CP resolve par hi product ke `kb_user_tenant` count ko trust kare. Pehla saaf hai magar naya endpoint.
-2. **`security_events` retention** — `02` §6 mein already open hai (90 din vs 1 saal). CP ke liye yeh billing/fraud investigation se jur jata hai, is liye 1 saal recommend karta hoon.
-3. **Organization (multi-product buyer)** — aaj `tenants_registry` per (product, tenant) row hai, is liye ek company jo 2 products le, uski 2 alag tenant identities hongi. Agar "one company, one bill, 2 products" chahiye to `organizations` table chahiye (aur `invoices.organization_id`). Abhi scope se bahar rakha.
-4. **Refund policy enforcement** — `payments.status = refunded` schema mein hai magar `subscriptions` par iska asar define nahi (refund → cancel? → grace?). Business rule aap ka.
+Charon **decided** hain. Neeche har faisla + uska schema/flow par asar.
+
+### D1 — Seats: customer-bought, koi metering nahi (Phase 1)
+
+`subscriptions.seats` hi authoritative hai. Customer checkout par seats chunta hai (ya plan ka `seat_limit` default lagta hai), CP usay store karta hai, aur entitlement `limits.seats = min(plans.seat_limit, subscriptions.seats)` banta hai.
+
+**Phase 1 mein `used` nahi:** snapshot mein `limits`/`quotas` sirf limit rakhte hain, `used` field nahi. CP product se seat count nahi maangta. Wajah: metering ke baghair bhi plan enforce ho jata hai — product apne `kb_user_tenant` count ko khud limit se compare kar sakta hai (uska data uske paas hai), aur CP ko har resolve par product ka internal count chahiye hi nahi.
+
+**Phase 2 (optional):** signed `POST /api/v1/usage` — product `{ tenant_id, seats_used, at }` push kare, CP `subscription_usage` table mein rakhe (yeh table abhi design mein nahi). Tab hi `used` snapshot mein aayega aur over-seat par billing ho sakti hai. **Yeh Phase 2 ka kaam hai, S0–S9 mein nahi.**
+
+Asar: §3.2 step 3 jaisa hai (`min()`), §3.3 snapshot se `used` nahi aata, §1.3 `subscriptions.seats` par koi change nahi.
+
+### D2 — `security_events` retention: 1 saal
+
+365 din, har jagah consistent — §1.2 ka schema note, prune command `security:prune-events --older-than=365d`, aur `02` §6 ka open question yahan **band**. Wajah: CP mein security events billing/fraud investigation se jur jate hain (TRX replay, account takeover), aur 90 din us window se chhota hai. `audit_logs` (tenant-level) ka retention tenant ka faisla rehta hai — woh alag cheez hai.
+
+### D3 — Koi `organizations` table nahi; `billing_profile` + invoice snapshot
+
+`tenants_registry.billing_profile` (JSON) current business details rakhta hai: `business_name, address, city, ntn, strn, phone, email`. Har invoice issue hote waqt uski **copy** `invoices.billing_profile_snapshot` mein freeze ho jati hai.
+
+**Snapshot kyun, sirf join kyun nahi:** invoice legal record hai. Agar customer 6 mahine baad address ya NTN badle aur hum join karein to purane invoices bhi naye address dikhane lagenge — tax filing aur audit dono ke liye ghalat. Is liye invoice apna data khud rakhta hai.
+
+**Multi-product buyer:** abhi ek company jo 2 products le, uski 2 `tenants_registry` rows hongi (2 `kb_tenant_id`, 2 subdomains) aur 2 alag invoices — koi consolidated bill nahi. Yeh **jaan boojh kar** accept kiya: `organizations` add karna baad mein additive hai (`organizations` + `tenants_registry.organization_id` nullable + `invoices.organization_id` nullable), magar abhi uski zaroorat nahi aur woh ek poora extra CRUD surface laata hai. Phase 1 mein billing per-product hai.
+
+### D4 — Refunds: admin ka faisla, subscription par default prompt
+
+`payments.status = refunded` (ya `partially_refunded`) hone par subscription **khud** nahi badalti. Flow:
+
+| Case | Subscription par asar |
+|---|---|
+| **Full refund, current period** | Admin ko prompt: "Subscription bhi cancel karein?" — **default haan**, magar admin mana kar sakta hai (goodwill refund) |
+| **Partial refund** | **Koi state change nahi** — sirf payment row + event |
+| **Full refund, purana period** | Koi state change nahi (current period already paid hai) |
+
+**Har refund par `subscription_events` row lazmi** — `type = 'refunded'`, `actor_type = 'admin'`, `data = { payment_id, amount_minor, scope: full|partial, cancelled: bool }`. Agar admin ne cancel chuna to usi transaction mein `cancelled` transition bhi hoti hai (do events: `refunded` + `cancelled`), warna sirf `refunded`. Isse refund ka poora audit trail subscription timeline par dikhta hai, `payments` table mein chhupa nahi rehta.
+
+Asar: `subscription_events.type` enum mein `refunded` add (§1.3), `payments.status` values already maujood, koi naya column nahi.
+
+---
+
+## 9. Changelog
+
+### 13 Nov 2026 — review pass (v2)
+
+| # | Kya badla | Kahan | Kyun |
+|---|---|---|---|
+| 1 | `payments.gateway` **nullable → NOT NULL**, values `manual_easypaisa\|manual_jazzcash\|jazzcash\|easypaisa\|card`; comment corrected; `method` `manual\|gateway` par collapse; T1/T2/T3/T4 tests added | §1.3, §7.1, §7 | `unique(gateway, reference)` NULL gateway ke saath duplicate TRX nahi rokti (NULLs distinct). Purana comment isi ghalti ko justify kar raha tha |
+| 2 | `subscriptions:tick` order: cancel **pehle**, phir `active → grace` (`cancel_at_period_end = 0` explicit); `trialing` ke liye `trial_ends_at`; T5/T6 tests | §2.3, §7.1 | Purane order mein cancel kiya hua row grace mein chala jata tha; `current_period_end` trial ka clock nahi hai |
+| 3 | `invoice_items.unit_amount_minor` + `amount_minor` **signed `bigInteger`**; totals ka compute/stored rule documented; T8/T9 tests | §1.3, §7.1 | Discount/credit lines negative hoti hain — unsigned column unhein reject karta ya sign kha jata |
+| 4 | `security_events` retention **90 din → 1 saal**, prune command named | §1.2 | §8 Q2 ke saath consistent; `02` §6 ka open question band |
+| 5 | §8 "Open questions" → **"Decisions (resolved)"** D1–D4; `tenants_registry.billing_profile`, `invoices.billing_profile_snapshot`, `subscription_events.type += refunded` | §8, §1.3 | Charon sawal band; schema unke mutabiq adjust hui |
+| 6 | Naya **§2.4 Product-side contract** (grace → read_only, expired → locked, unknown → read_only) | §2.4 | Product-side behaviour pehle sirf §2.1 table mein implicit tha; ab explicit contract hai |
+| 7 | Naya **§7.1 Test plan** (T1–T12) | §7.1 | "feature tests" S9 mein ek lafz tha — koi list nahi thi |
+
+**Kya nahi badla:** 18 tables ki list, ERD, entitlement algorithm/hash/cache, admin screens (28), storefront routes, manifest sync, sprint effort (~51 din). In mein koi review point nahi tha.
 
 ---
 
