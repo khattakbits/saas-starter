@@ -1,6 +1,6 @@
 # 02 — Architecture Decisions (Package Split, Versioning, Tenancy)
 
-**Date:** 12 Nov 2026 · **Revised:** 12 Nov 2026 (approved decisions added)
+**Date:** 12 Nov 2026 · **Revised:** 12 Nov 2026 (approved decisions added) · **Revised:** 13 Nov 2026 (**D3 aur D4 superseded by `07-MULTI-TENANCY-DESIGN.md`** — path-based tenancy; D1, D2, D5 unchanged. Tafseel §7 changelog)
 **Repo:** `E:/LaraProjects/saas-starter` (branch `master`)
 **Location:** `docs/platform/` — platform-series documents. `docs/01-04` (status report, deployment, integration, development) purani series hai aur **change nahi ki gayi**.
 **Inputs:** `docs/01-STATUS-REPORT.md`, `composer.json`, `app/Core/**`, `app/Modules/**`, `routes/*.php`, `config/*.php`, `database/migrations/*`, `resources/js/**`, `vite.config.js`, `node_modules/@inertiajs/vite/types/pagesTransform.d.ts`
@@ -14,12 +14,14 @@ Yeh document code **nahi** badalta. Sirf extraction ka plan, blockers, aur appro
 
 Yeh 5 decisions **final** hain. Neeche jahan bhi "recommendation" ya "pending" jaisa likha ho, woh §0 se override hai.
 
+> **13 Nov 2026 — D3 aur D4 superseded.** `07-MULTI-TENANCY-DESIGN.md` ne tenancy ko **path-based** kar diya (`mizaanbitserp.com/{tenant_slug}/...`). D3 (subdomain) aur D4 (host-only cookie + handoff) **Phase 1 ke liye valid nahi hain**. D1, D2, D5 **jaisa hai waisa** hai. Purani decisions history ke liye neeche rakhi gayi hain — delete nahi ki gayin. Naya authoritative record: `07` §0, §3, §14.
+
 | # | Decision | Iska seedha asar |
 |---|---|---|
 | **D1** | **Mirror users CENTRAL** + `kb_user_tenant` pivot. `audit_logs` har row mein user ka **name + email snapshot** rakhega (FK nahi, snapshot) | Tenant export/restore ke baad bhi audit readable rahega; `user_id` cross-DB FK ban hi nahi sakta (§5.5) |
 | **D2** | **`audit_logs` = tenant-level** (data changes: doc.*, role.*, settings.*, email_*). **`security_events` = central** (login, logout, login failed, password reset, user disable/enable) | Aaj ke `auth.*` aur `user.status` calls audit se hat kar `security_events` mein jayenge (§5.2b) |
-| **D3** | **Subdomain-only**: `{slug}.<product-domain>`. Custom domains **Phase 2**. TLS = **wildcard cert per product domain, DNS-01 challenge** | `tenants`/`domains` resolve subdomain se; cert automation DNS API par (HTTP-01 nahi) |
-| **D4** | **Koi wildcard session cookie nahi.** Sirf **host-only** cookies. SSO callback `app.<domain>` par hota hai, phir **one-time handoff token** se tenant subdomain ko session milta hai | Har subdomain ka apna session; `SESSION_DOMAIN` khali. Handoff design §5.4.1 |
+| **D3** | ~~**Subdomain-only**: `{slug}.<product-domain>`. Custom domains **Phase 2**. TLS = **wildcard cert per product domain, DNS-01 challenge**~~ → **SUPERSEDED by `07`, 13 Nov 2026.** Naya: **path-based** `mizaanbitserp.com/{tenant_slug}/...`, custom domains **Phase 2** (`07` §13) | ~~`tenants`/`domains` resolve subdomain se; cert automation DNS API par~~ → Ek origin, ek single-domain cert (HTTP-01), koi wildcard DNS nahi (`07` §0, §3) |
+| **D4** | ~~**Koi wildcard session cookie nahi.** Sirf **host-only** cookies. SSO callback `app.<domain>` par hota hai, phir **one-time handoff token** se tenant subdomain ko session milta hai~~ → **SUPERSEDED by `07`, 13 Nov 2026.** Naya: **same origin, ek session, koi handoff token nahi** | ~~Har subdomain ka apna session; `SESSION_DOMAIN` khali. Handoff design §5.4.1~~ → Ek cookie, tenant boundary **request** mein (`kb_user_tenant` check), session mein nahi (`07` §3.7) |
 | **D5** | **Local password login sirf break-glass platform admin** ke liye — env flag (default **off**), audited, optionally IP-restricted. **Tenant users ke liye password login bilkul nahi** | `AuthController`/`PasswordResetController` core mein rehte hain magar conditional routes; tenant user ka reset KB par |
 
 
@@ -82,7 +84,7 @@ sequenceDiagram
     U->>OA: GET /oauth/authorize?client_id=mizaan&redirect_uri=...&code_challenge=...&state=...
     OA->>U: 3D login (agar CP session nahi)
     U->>OA: POST /login
-    OA-->>U: 302 https://app.mizaanbitserp.com/auth/kb/callback?code=...&state=...
+    OA-->>U: 302 https://mizaanbitserp.com/auth/kb/callback?code=...&state=...
     U->>P: GET /auth/kb/callback?code&state
 
     Note over P,OA: KB endpoints — product caller hai, owner nahi
@@ -90,14 +92,15 @@ sequenceDiagram
     OA-->>P: access_token + refresh_token + id_token
     P->>OA: GET /oauth/userinfo (Bearer)
     OA-->>P: sub, email, kb_status, token_version, products[]
+    P->>CP: GET /api/v1/users/tenants (Bearer) — membership ka source
+    CP-->>P: [{tenant_id, slug, role, status}]
     P->>CP: GET /api/v1/subscriptions/resolve (Bearer)
     CP-->>P: plan, status, period, tenant, entitlements, etag
-    P->>PDB: upsert kb_user (sub) + entitlement snapshot
+    P->>PDB: upsert kb_user (sub) + reconcile kb_user_tenant + entitlement snapshot
 
-    Note over U,P: 6. Product dashboard — D4: handoff, koi wildcard cookie nahi
-    P-->>U: 302 https://acme.mizaanbitserp.com/auth/handoff?token=... (60s, single-use)
-    U->>P: GET /auth/handoff (tenant host: atomic consume + tenant/host check)
-    P-->>U: 302 /dashboard, host-only tenant session set
+    Note over U,P: 6. Product dashboard — D4 superseded: ek origin, koi handoff nahi
+    P-->>U: 302 /acme/dashboard (same-origin session already set)
+    U->>P: GET /acme/dashboard (tenant path; membership check per request)
 
     Note over CP,P: 7. Expiry
     CP->>CP: scheduler: period_end cross → status=grace
@@ -121,7 +124,7 @@ sequenceDiagram
     P-->>U: unlocked
 ```
 
-**Rule jo diagram se nikalta hai:** har arrow jismein `oauth` ya `subscriptions` hai, woh **product → KhattakBits** hai. Product ke apne sirf 3 endpoints hain: `/auth/kb/redirect`, `/auth/kb/callback`, `/auth/handoff` (plus `/auth/kb/backchannel-logout`).
+**Rule jo diagram se nikalta hai:** har arrow jismein `oauth` ya `subscriptions` hai, woh **product → KhattakBits** hai. Product ke apne sirf **2** endpoints hain: `/auth/kb/redirect`, `/auth/kb/callback` (plus `/auth/kb/backchannel-logout`). **`/auth/handoff` 13 Nov 2026 ko hat gaya** (D4 superseded, `07` §3.6) — path-based mein same-origin session pehle se maujood hai.
 
 ---
 
@@ -289,21 +292,22 @@ Symlink hone ki wajah se Vite ko `server.fs.allow` mein `../khattakbits-core` ch
 
 ## 5. Tenancy Architecture (multi-DB)
 
-`stancl/tenancy` **v3.10.1** Laravel 13 support karta hai — Packagist metadata (`repo.packagist.org/p2/stancl/tenancy.json`, checked 12 Nov 2026) ke mutabiq `illuminate/support: ^10.0|^11.0|^12.0|^13.0`. Yeh claim metadata se hai, actual install se **NOT VERIFIED** — pehla qadam `composer require stancl/tenancy:^3.10` chalana hoga. Agar resolve fail ho to alternative: **custom `TenantDatabaseManager`** (stancl ka core idea 300 lines mein replicate) — magar pehle v3.10 try karein.
+`stancl/tenancy` **v3.10.1** Laravel 13 support karta hai — ~~Packagist metadata (`repo.packagist.org/p2/stancl/tenancy.json`, checked 12 Nov 2026) ke mutabiq `illuminate/support: ^10.0|^11.0|^12.0|^13.0`. Yeh claim metadata se hai, actual install se **NOT VERIFIED**~~ → **13 Nov 2026: CLOSED.** `composer --dry-run` se verified on **PHP 8.5.12** aur **PHP 8.3.27** (dono par v3.10.1 + 3 deps resolve hote hain). Tafseel: `07` §1.1. Package source bhi padha gaya — `07` §1.2-§1.5.
 
 ### 5.1 Central DB (product app, ek hi)
 
 | Table | Kyun central |
 |---|---|
-| `tenants`, `domains` | stancl ka core; tenant resolve yahin se hota hai |
-| `kb_users` (mirror) | **D1** — ek `sub` = ek row |
-| `kb_user_tenant` (pivot) | Kaun user kis tenant ka member hai + local role hint |
+| `tenants` | stancl ka core; `id` = ULID = `04` ka `kb_tenant_id`. Path resolution (`07` §3.1) |
+| `domains` | stancl ka core — **Phase 1 mein unused** (path-based). Custom domains ke liye rakha gaya hai (`07` §13) |
+| `users` (mirror) | **D1** — ek `sub` = ek row. `users.kb_user_id` = CP ka `users.id` (`07` §2.1) |
+| `kb_user_tenant` (pivot) | Kaun user kis tenant ka member hai + CP role hint. **Source of truth:** `GET /api/v1/users/tenants` (`07` §3.6.1) |
 | `kb_snapshot` | Last good `resolve` response (JSON + `etag` + `fetched_at`) — offline fallback 72h |
 | `kb_oauth_state` | PKCE verifier + `state` login ke dauraan |
-| `sso_handoffs` | **D4** — one-time handoff tokens (§5.4.1) |
+| ~~`sso_handoffs`~~ | ~~**D4** — one-time handoff tokens (§5.4.1)~~ — **RETIRED 13 Nov 2026** (D4 superseded, `07` §3.6). Phase 2 custom domains mein **Option B** ke liye wapas aa sakta hai (`07` §13.4) |
 | `webhook_events` | `X-KB-Event-Id` idempotency; tenant resolve se **pehle** dedupe chahiye |
 | `security_events` | **D2** — login/logout/failed/password/disable (§5.2b) |
-| `sessions` | Login `app.` par hota hai, phir handoff — session central |
+| `sessions` | **Ek session, ek origin** (path-based). Tenant boundary request mein hai, session mein nahi (`07` §3.7) |
 | `personal_access_tokens` | Sanctum, device-level |
 | `jobs`, `failed_jobs`, `cache` | Queue workers central context mein chalte hain; job payload mein `tenant_id` |
 
@@ -336,31 +340,54 @@ Wajah: ek hi insaan aik product ke 2 tenants mein ho sakta hai (apni company + c
 
 Note: Spatie ka `model_has_roles` morph columns use karta hai (FK nahi), is liye tenant DB mein `users` table ke baghair chalta hai — verified `database/migrations/2026_10_26_101855_create_permission_tables.php:84-92`. `config/permission.php:151` `teams => false` hi rahega: tenant DB khud boundary hai.
 
-### 5.4 D3 — Tenant identification (subdomain-only)
+### 5.4 D3 — Tenant identification (**path-based**; subdomain verdict superseded)
 
-| Option | Verdict |
-|---|---|
-| **Path** (`mizaanbitserp.com/acme/...`) | ❌ Reject — cookie path scope leak, route caching, asset URL rewrite |
-| **Subdomain** (`{slug}.mizaanbitserp.com`) | ✅ **Approved (D3)** — stancl `DomainTenantResolver`, ek wildcard cert |
-| **Custom domain** (`erp.customer.com`) | ⏸ **Phase 2** — `domains` table mein row, per-domain cert |
+> **13 Nov 2026:** neeche ka verdict **palat gaya**. Path-based **approved** hai, subdomain **reject**. Wajah aur poora design: `07-MULTI-TENANCY-DESIGN.md` §0, §3, §12.2. Purana verdict history ke liye rakha gaya hai.
+
+| Option | Verdict (13 Nov 2026) | Purana verdict (12 Nov) |
+|---|---|---|
+| **Path** (`mizaanbitserp.com/acme/...`) | ✅ **APPROVED** — ek origin, ek cert, ek deploy, ~0ms tenant switch | ~~❌ Reject — cookie path scope leak, route caching, asset URL rewrite~~ |
+| **Subdomain** (`{slug}.mizaanbitserp.com`) | ❌ **Rejected** — wildcard cert + DNS-01 + wildcard DNS ka infra overhead, aur handoff ki extra redirect | ~~✅ Approved (D3) — stancl `DomainTenantResolver`, ek wildcard cert~~ |
+| **Custom domain** (`erp.customer.com`) | ⏸ **Phase 2** — `tenant_domains` table, per-domain cert, SSO Option B (`07` §13) | ⏸ Phase 2 |
+
+**Naya URL map (Phase 1):**
 
 ```
-mizaanbitserp.com              → marketing / "Open app" → KB catalog
-app.mizaanbitserp.com          → SSO callback + tenant picker (session yahin)
-{slug}.mizaanbitserp.com       → tenant app (handoff ke baad session)
+mizaanbitserp.com                     → marketing / "Open app" → KB catalog
+mizaanbitserp.com/login               → SSO entry (central)
+mizaanbitserp.com/auth/kb/callback    → OAuth callback (central)
+mizaanbitserp.com/profile             → identity (central)
+mizaanbitserp.com/acme/dashboard      → tenant app (path)
+mizaanbitserp.com/acme/settings/users → tenant app (path)
 ```
 
-**Reserved slugs:** `www, app, admin, api, auth, status, docs, mail, assets, cdn, assets-static`.
+**Purana URL map (superseded, Phase 2 alternative ke tor par):**
 
-**TLS (D3):** per product domain **ek wildcard cert** — `*.mizaanbitserp.com` + `mizaanbitserp.com` (SAN). Issue **DNS-01** se (HTTP-01 wildcard nahi de sakta), taake naya tenant subdomain banne par cert dobara issue na karni pare. Renewal 30 din pehle, cron se. Naya tenant = naya DNS record (wildcard `*.mizaanbitserp.com` A record pehle se hai, is liye **koi DNS change bhi nahi chahiye**) — sirf `tenants`/`domains` row.
+```
+~~mizaanbitserp.com              → marketing / "Open app" → KB catalog~~
+~~app.mizaanbitserp.com          → SSO callback + tenant picker (session yahin)~~
+~~{slug}.mizaanbitserp.com       → tenant app (handoff ke baad session)~~
+```
 
-### 5.4.1 D4 — Host-only cookies + SSO handoff
+**Reserved slugs:** ~~`www, app, admin, api, auth, status, docs, mail, assets, cdn, assets-static`~~ → **`07` §3.3 ki derived list** (actual routes se nikali gayi: `login`, `forgot-password`, `reset-password`, `logout`, `profile`, `attachments`, `documents`, `up`, `storage`, `build`, `examples`, `settings`, `accounting-demo`, `billing`, `webhooks`, `admin`, `api`, `auth`, ... + policy blocklist). List **routes se derive** hoti hai aur ek **coverage test** drift rokta hai (`07` §3.3).
 
-**Koi wildcard cookie nahi.** `SESSION_DOMAIN` khali, har subdomain ka apna host-only session. Iska matlab: `app.` par login karne se `acme.` par session **nahi** milta — uske liye handoff token hai.
+**TLS (naya):** **ek single-domain cert** (`mizaanbitserp.com`), **HTTP-01** se. Koi wildcard nahi, koi DNS API automation nahi, naya tenant = **koi DNS ya cert change nahi**. Renewal 30 din pehle, cron se.
 
-**Kyun (justification):** wildcard cookie ka blast radius poora product hai — kisi aik tenant ke module mein XSS ya leaked cookie har tenant par valid ho jati hai. Host-only mein blast radius aik tenant. Qeemat: tenant switch par aik extra redirect (~100ms).
+~~**TLS (D3, superseded):** per product domain **ek wildcard cert** — `*.mizaanbitserp.com` + `mizaanbitserp.com` (SAN). Issue **DNS-01** se (HTTP-01 wildcard nahi de sakta), taake naya tenant subdomain banne par cert dobara issue na karni pare. Renewal 30 din pehle, cron se. Naya tenant = naya DNS record (wildcard `*.mizaanbitserp.com` A record pehle se hai, is liye **koi DNS change bhi nahi chahiye**) — sirf `tenants`/`domains` row.~~
 
-**Flow:**
+### 5.4.1 D4 — Host-only cookies + SSO handoff — **RETIRED 13 Nov 2026**
+
+> **Yeh poora section Phase 1 ke liye valid nahi hai.** D4 superseded (`07` §0). Path-based mein ek hi origin hai, is liye cookie boundary bhi nahi — **handoff token ki zaroorat nahi**. Naya flow: `07` §3.6. Naya session model: `07` §3.7. Naya membership check: `07` §3.8.
+>
+> **Section delete nahi kiya gaya** kyunke Phase 2 custom domains mein **Option B** (central login + handoff token) wapas aa sakta hai — `07` §13.4 usi design ko recommend karta hai. Jab woh din aaye, yeh schema aur rules dobara relevant ho jayenge.
+
+~~**Koi wildcard cookie nahi.** `SESSION_DOMAIN` khali, har subdomain ka apna host-only session. Iska matlab: `app.` par login karne se `acme.` par session **nahi** milta — uske liye handoff token hai.~~
+
+**Naya (Phase 1):** ek cookie, ek origin. Tenant boundary **request** mein hai — har request par `EnsureTenantMembership` `kb_user_tenant` check karta hai (`07` §3.8). Session mein tenant id **nahi** hota, is liye woh stale bhi nahi ho sakta.
+
+**Purana justification (superseded):** ~~wildcard cookie ka blast radius poora product hai — kisi aik tenant ke module mein XSS ya leaked cookie har tenant par valid ho jati hai. Host-only mein blast radius aik tenant. Qeemat: tenant switch par aik extra redirect (~100ms).~~ → **Path-based mein blast radius poora product hai** — yeh qeemat jaan boojh kar li gayi hai, aur uska ilaaj CSP enforce + zero `v-html` hai (`07` §4.2). Tenant switch **~0ms** ho gaya.
+
+**Purana flow (superseded — Phase 2 Option B ke liye reference):**
 
 ```mermaid
 sequenceDiagram
@@ -393,7 +420,7 @@ sequenceDiagram
     end
 ```
 
-**`sso_handoffs` schema:**
+**`sso_handoffs` schema (retired — Phase 2 Option B ke liye rakha gaya):**
 
 | Column | Type | Kaam |
 |---|---|---|
@@ -408,7 +435,7 @@ sequenceDiagram
 | `ip`, `user_agent` | string | forensics |
 | `created_at` | timestamp | prune 24h baad |
 
-**Rules (sab lazmi):**
+**Rules (retired — Phase 1 mein koi `/auth/handoff` route nahi hai):**
 
 1. **Single use** — consume `UPDATE sso_handoffs SET consumed_at = now() WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > now()`; `affectedRows === 1` warna 401. Read-then-write race nahi.
 2. **Expiry 60s** — page slow ho to user dobara `app.` par jaye, token dobara milega.
@@ -420,7 +447,7 @@ sequenceDiagram
 8. **Rate limit** `/auth/handoff` — 10/min per IP + 5/min per token_hash.
 9. **Prune** — consumed/expired rows 24h baad delete (forensics ke liye thoda rakhein).
 
-**Break-glass (D5) isse alag hai:** platform admin `app.` par local login kar sakta hai (`KB_AUTH_BREAK_GLASS=true`), magar tenant DB mein uski koi membership nahi hoti — woh handoff se tenant mein **nahi** jata; woh `app.` par admin surface use karta hai. Tenant user ke liye password field maujood hi nahi.
+**Break-glass (D5) isse alag hai:** platform admin `mizaanbitserp.com/login` par local login kar sakta hai (`KB_AUTH_BREAK_GLASS=true`), magar tenant DB mein uski koi membership nahi hoti — is liye woh `/{slug}/...` par **404** paata hai (`EnsureTenantMembership`, `07` §3.8), aur CP/admin surface central paths par use karta hai. Tenant user ke liye password field maujood hi nahi.
 
 ### 5.5 Mandatory Step 0 — cross-DB foreign keys ka fix
 
@@ -474,15 +501,25 @@ $table->string('user_email', 190)->nullable();   // naya — D1
 |---|---|
 | Mirror users central ya tenant-level? | **Central + `kb_user_tenant`** (D1) |
 | `audit_logs` kahan? | **Tenant-level**, `security_events` central (D2) |
-| Tenant identification? | **Subdomain-only**, custom domains Phase 2, wildcard TLS via DNS-01 (D3) |
-| Wildcard session cookie? | **Nahi** — host-only + one-time handoff (D4) |
+| Tenant identification? | **Path-based** `mizaanbitserp.com/{slug}/...`, custom domains Phase 2, single-domain cert HTTP-01 (D3 **superseded 13 Nov 2026**, `07` §3) |
+| Wildcard session cookie? | **Koi farq nahi padta** — ek origin, ek session, koi handoff (D4 **superseded 13 Nov 2026**, `07` §3.7) |
 | Products mein local login? | **Sirf break-glass admin**, flag default off, audited, optional IP allowlist (D5) |
 
 **Still open (non-blocking, Phase 2):**
 
-1. Custom domain TLS automation kis se (Caddy on-demand vs Cloudflare for SaaS vs Forge)?
+1. ~~Custom domain TLS automation kis se (Caddy on-demand vs Cloudflare for SaaS vs Forge)?~~ → **13 Nov 2026: answered in `07` §13.6** — **Caddy on-demand TLS** + `/internal/tls-ask` endpoint recommend. Let's Encrypt rate limits **NOT VERIFIED** (official docs se confirm karein).
 2. Break-glass IP allowlist env mein ya DB settings mein (runtime change bina deploy)?
 3. `security_events` retention — 90 din ya 1 saal? (audit_logs tenant ke saath jayega, uska retention tenant ka faisla)
+
+---
+
+## 7. Changelog
+
+| v | Date | Kya |
+|---|---|---|
+| **v1** | 12 Nov 2026 | Initial decisions record. D1-D5 approved. §5 tenancy architecture, §5.5 Step 0 cross-DB FK fix. |
+| **v2** | 12 Nov 2026 | Approved decisions (§0) added; "recommendation/pending" ko D1-D5 se override kiya. |
+| **v3** | 13 Nov 2026 | **D3 aur D4 superseded by `07`.** (a) §0 — D3/D4 rows struck through + "SUPERSEDED by 07, 13 Nov 2026" marker, D1/D2/D5 untouched, history visible. (b) §1.2 — mermaid steps 5-6 se `/auth/handoff` aur `app.` host hataye; `GET /api/v1/users/tenants` step add; product endpoints 3 → **2**. (c) §5 intro — "install se NOT VERIFIED" caveat **closed** (verified on PHP 8.5.12 + 8.3.27). (d) §5.1 — `sso_handoffs` **RETIRED** mark, `tenants`/`domains` alag rows, `sessions` comment "ek session, ek origin", `kb_users` → `users` (asli table name). (e) §5.4 — verdict **palat gaya** (path approved, subdomain rejected), naya URL map, reserved slugs → `07` §3.3 derived list, TLS single-domain/HTTP-01. (f) §5.4.1 — **RETIRED**, schema + 9 rules history ke liye rakhe (Phase 2 Option B reference), break-glass paragraph path-based. (g) §6 — resolved rows 3/4 update, still-open item 1 closed (`07` §13.6). |
 
 ---
 

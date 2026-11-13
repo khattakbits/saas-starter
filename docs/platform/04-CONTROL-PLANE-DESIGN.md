@@ -1,6 +1,6 @@
 # 04 — Control Plane Design (data model, state machine, entitlements, admin, storefront)
 
-**Date:** 13 Nov 2026  
+**Date:** 13 Nov 2026 · **Revised:** 13 Nov 2026 (**v5** — path-based tenancy sync with `07`: `tenants_registry.subdomain` → `product_url`, handoff references retired; changelog §9)  
 **Repo:** `E:/LaraProjects/saas-starter` (branch `extract/package-skeleton`)  
 **Depends on:** `docs/platform/02-ARCHITECTURE-DECISIONS.md` (§0 D1–D5, §5), `docs/platform/03-EXTRACTION-PLAN.md` (Part C)  
 **Inputs:** `composer.json`, `.env`, `config/database.php`, `phpunit.xml`, `app/Modules/Settings/**`, `khattakbits-core/src/Support/{TableQuery,PermissionCatalog,MenuBuilder,DocumentRegistry,Naming}.php`, `khattakbits-ui/src/**`  
@@ -26,7 +26,7 @@ Local MySQL `127.0.0.1:3306` par is waqt **connection refused** de raha hai, is 
 2. **Koi generated column, `FULLTEXT`, ya `CHECK` constraint nahi** — Laravel inhein cross-driver reliably nahi banata.
 3. **`ENUM` nahi** — `string(20)` + PHP enum cast. Wajah: naya state add karne par MySQL ENUM ka `ALTER` table rebuild karta hai (8.0 se pehle), aur SQLite par `enum` `check` constraint ban jata hai jo `ALTER` nahi hota.
 
-**Yeh control plane ki apni single central DB hai** (`admin_core`). `02` §5.1 ka "central DB" **product app** ka hai (`tenants`, `domains`, `kb_users`, `sso_handoffs`) — dono alag databases hain, naam ki similarity coincidence hai. Product ka central DB yahan se sirf HTTP se baat karta hai.
+**Yeh control plane ki apni single central DB hai** (`admin_core`). `02` §5.1 ka "central DB" **product app** ka hai (`tenants`, `domains`, `users`, `kb_user_tenant`) — dono alag databases hain, naam ki similarity coincidence hai. Product ka central DB yahan se sirf HTTP se baat karta hai. (`sso_handoffs` 13 Nov 2026 ko retire ho gaya — path-based tenancy, `07` §3.6.)
 
 ---
 
@@ -90,7 +90,8 @@ key                 string(40)   unique          // 'mizaan' — kb-product.json
 name                string(120)
 tagline             string(190)  nullable
 description         text         nullable
-domain              string(190)  nullable unique // 'mizaanbitserp.com' (D3 subdomain base)
+domain              string(190)  nullable unique // 'mizaanbitserp.com' — path-based; display/branding +
+                                                //   `tenantUrl()` ka base (`07` §5.2). Resolution isse nahi hoti
 docs_url            string(190)  nullable
 support_email       string(190)  nullable
 logo_path           string(190)  nullable
@@ -205,8 +206,12 @@ unique (plan_id, key)
 id                  bigIncrements
 kb_tenant_id        char(26)  unique            // ULID — product app ke `tenants.id`
 product_id          foreignId  constrained('products') cascadeOnDelete
-slug                string(60)                  // 'acme' — subdomain label
-subdomain           string(190) unique          // 'acme.mizaanbitserp.com' (handoff target_host, D4)
+slug                string(60)                  // 'acme' — path segment (`07` §3.5). IMMUTABLE
+product_url         string(190) nullable        // 'https://mizaanbitserp.com/acme' — DERIVED, informational
+                                                //   (support/emails/billing receipts). Unique NAHI:
+                                                //   uniqueness `unique(product_id, slug)` se aati hai.
+                                                //   (Pehle yahan `subdomain ... unique` tha — D4 retired
+                                                //    13 Nov 2026; custom domain aane par `07` §13.1)
 owner_user_id       foreignId  constrained('users') restrictOnDelete
 status              string(20)  index default 'provisioning'
                                                 // provisioning|active|read_only|suspended|archived
@@ -461,7 +466,7 @@ index (product_id, status)
 | `active → active`       | renewal verified                                | payment event | `period_start/end` shift, `renewed`, webhook `subscription.renewed`               |
 | `active → cancelled`    | `cancel_at_period_end` set + `period_end` cross | scheduler     | access `period_end` tak full rehta hai                                            |
 | `active → cancelled`    | admin immediate cancel                          | admin         | `cancelled_at = now`, access foran `locked`, audit + `security_events`            |
-| `active → suspended`    | abuse / fraud                                   | admin         | handoff refuse, resolve `blocked`                                                 |
+| `active → suspended`    | abuse / fraud                                   | admin         | resolver suspended tenant ko **404** de, resolve `blocked` (`07` §10.4)            |
 | `grace → active`        | payment verified                                | payment event | grace clear, naya period                                                          |
 | `grace → expired`       | `grace_ends_at` cross                           | scheduler     | `expired`, webhook `subscription.expired`                                         |
 | `grace → cancelled`     | user cancels                                    | user          | —                                                                                 |
@@ -511,7 +516,7 @@ Ek command, har 10 minute. **Order matter karta hai — cancel pehle, grace baad
 
 Idempotency: har query `WHERE status = '<expected>'` ke saath chalti hai, is liye do workers aik hi row par race karein to sirf ek `UPDATE` affect karta hai (affected rows = 1). Double webhook nahi jayega. Steps 1–4 aik hi DB transaction mein nahi — har step ka apna transaction hai, taake step 3 fail ho to steps 1–2 ka kaam na jaye.
 
-**Grace ke andar writes:** `grace` aur `past_due` = read-only. Product `access_mode: read_only` par naye records block karta hai, magar read + export + payment allow. `expired`/`cancelled` = `locked` (billing + export only). `suspended` = `blocked` (handoff refuse hota hai, `02` §5.4.1 rule 5).
+**Grace ke andar writes:** `grace` aur `past_due` = read-only. Product `access_mode: read_only` par naye records block karta hai, magar read + export + payment allow. `expired`/`cancelled` = `locked` (billing + export only). `suspended` = `blocked` (resolver suspended tenant ko **404** deta hai, `07` §3.6 / §10.4 — koi handoff nahi, kyunke path-based hai).
 
 ### 2.4 Product-side contract
 
@@ -811,7 +816,7 @@ sequenceDiagram
 
 **Guest ke liye "register" = email + password + name.** Yeh CP ka primary auth hai — D5 ka break-glass flag **product skeleton** par lagta hai, CP par nahi. CP identity hub hai; yahan password login normal hai, warna koi customer hi login nahi kar sakta. D5 ka matlab yeh hai ke *product app* apna local login na khole.
 
-**Slug rules:** auto-suggest product name se (`Str::slug`), reserved list (D3) + `unique(product_id, slug)` + `unique(subdomain)` check, live availability endpoint `GET /api/v1/tenants/slug-check?slug=`. Slug ek dafa confirm ho to `subscriptions`/`tenants_registry` active hone tak lock.
+**Slug rules:** auto-suggest product name se (`Str::slug`), reserved list (`07` §3.3 — actual routes se derived, `02` D3 ki purani static list nahi) + `unique(product_id, slug)` check (koi `unique(subdomain)` nahi — path-based mein `product_url` derived hai), live availability endpoint `GET /api/v1/tenants/slug-check?slug=`. Slug ek dafa confirm ho to **hamesha ke liye** lock — sirf provisioning tak nahi (`07` §3.5: rename = URL, emails, invoices sab tod dena).
 
 **Failure paths:** TRX reject → payment `rejected` + reason email + invoice `open` rehta hai (dobara submit ho sakta hai). 7 din tak unpaid → invoice `uncollectible`, registry `archived`, slug release.
 
@@ -980,7 +985,7 @@ Asar: §3.2 step 3 jaisa hai (`min()`), §3.3 snapshot se `used` nahi aata, §1.
 
 **Snapshot kyun, sirf join kyun nahi:** invoice legal record hai. Agar customer 6 mahine baad address ya NTN badle aur hum join karein to purane invoices bhi naye address dikhane lagenge — tax filing aur audit dono ke liye ghalat. Is liye invoice apna data khud rakhta hai.
 
-**Multi-product buyer:** abhi ek company jo 2 products le, uski 2 `tenants_registry` rows hongi (2 `kb_tenant_id`, 2 subdomains) aur 2 alag invoices — koi consolidated bill nahi. Yeh **jaan boojh kar** accept kiya: `organizations` add karna baad mein additive hai (`organizations` + `tenants_registry.organization_id` nullable + `invoices.organization_id` nullable), magar abhi uski zaroorat nahi aur woh ek poora extra CRUD surface laata hai. Phase 1 mein billing per-product hai.
+**Multi-product buyer:** abhi ek company jo 2 products le, uski 2 `tenants_registry` rows hongi (2 `kb_tenant_id`, 2 slugs → 2 paths) aur 2 alag invoices — koi consolidated bill nahi. Yeh **jaan boojh kar** accept kiya: `organizations` add karna baad mein additive hai (`organizations` + `tenants_registry.organization_id` nullable + `invoices.organization_id` nullable), magar abhi uski zaroorat nahi aur woh ek poora extra CRUD surface laata hai. Phase 1 mein billing per-product hai.
 
 ### D4 — Refunds: admin ka faisla, subscription par default prompt
 
@@ -1030,6 +1035,25 @@ Asar: `subscription_events.type` enum mein `refunded` add (§1.3), `payments.sta
 | 12 | **T1b** add (whitespace/case variant duplicate), T1/T3/T4 `reference` → `reference_norm`, §7 ka Phase 2 note update | §7.1, §7 | Naya unique index raw-string par nahi chalta; tests usi column ko target karein warna woh green rahenge magar bug zinda rahega |
 
 **Kya nahi badla:** tables ki ginti (18), ERD, state machine, entitlement algorithm, admin screens, storefront, manifest sync, effort. D1/D2 sirf `payments` ki do lines aur unke tests chhoote hain — 06 ne `payments` ko extend kiya hai, replace nahi.
+
+### 13 Nov 2026 — cross-doc sync with `07-MULTI-TENANCY-DESIGN.md` (v5)
+
+Path-based tenancy ne `02` ke D3/D4 supersede kar diye (`07` §0). `04` mein `tenants_registry` ka URL-facing hissa usi ke mutabiq update hua — **koi column delete nahi hua**, `subdomain` ki jagah `product_url` aaya (derived, non-unique).
+
+| # | Kya badla | Kahan | Kyun |
+|---|---|---|---|
+| 13 | `products.domain` ka comment: "D3 subdomain base" → "path-based; display/branding + `tenantUrl()` ka base; resolution isse nahi hoti" | §1.3 line 93 | `domain` ab **resolution** ke liye use nahi hota (`07` §5.2) — sirf `tenantUrl()` ka base aur branding. Column `unique` hi rehta hai |
+| 14 | `tenants_registry.slug` comment: "subdomain label" → "path segment (`07` §3.5), **IMMUTABLE**" | §1.3 line 208 | Slug ab URL ka path segment hai; `07` §3.5 ne usay Phase 1 mein immutable karar diya |
+| 15 | **`subdomain string(190) unique` → `product_url string(190) nullable`** (derived, non-unique) + comment mein uniqueness ka source (`unique(product_id, slug)`) aur `subdomain` ka retirement note | §1.3 line 209 | `subdomain` ka **poora maqsad** `handoff target_host` binding tha (D4). D4 retire hua to column ka koi kaam nahi bacha. `product_url` support/emails/billing receipts ke liye chahiye magar **derived** hai — usay store karke unique index banana do sources of truth bana deta hai |
+| 16 | `active → suspended` row: "handoff refuse" → "resolver suspended tenant ko **404** de" | §2.2 line 464 | Path-based mein handoff hai hi nahi. 404 (403 nahi) — tenant ka wajood leak na ho (`07` §3.8) |
+| 17 | Grace paragraph: "handoff refuse hota hai, `02` §5.4.1 rule 5" → "resolver 404 deta hai, `07` §3.6 / §10.4" | §2.3 line 514 | `02` §5.4.1 retire ho gaya; reference dead link ban jata |
+| 18 | Slug rules: "reserved list (D3)" → `07` §3.3 (routes se derived); `unique(subdomain)` hataya; "active hone tak lock" → "**hamesha ke liye** lock" | §7 line 814 | (a) `02` D3 ki static list drift karti hai — `07` §3.3 actual routes se derive + coverage test. (b) `unique(subdomain)` ka column hi nahi raha. (c) Rename = URL + emails + invoices + `return_to` sab todna (`07` §3.5) |
+| 19 | "2 subdomains" → "2 slugs → 2 paths" | §8 line 983 | Terminology; multi-product buyer ka behaviour same hai |
+| 20 | §0 line 29 ka parenthetical: `kb_users`, `sso_handoffs` → `users`, `kb_user_tenant` + retirement note | §0 | `sso_handoffs` retire ho gaya, aur asli table name `users` hai (`07` §2.1) |
+
+**Kya nahi badla:** tables ki ginti (18), `tenants_registry.owner_user_id`, `unique(product_id, slug)`, `index(owner_user_id, status)`, state machine ke 7 states, entitlement algorithm, admin screens, effort. **Ek bhi column delete nahi hua** — `subdomain` rename hua (`product_url`), taake agar Phase 2 custom domains `Option B` (handoff) chune to `07` §13.1 ka `tenant_domains` uski jagah le sake.
+
+**Naya cross-doc dependency (CP ka kaam):** `05` §1.2 ka `GET /api/v1/users/tenants` aur `subscription.created`/`resolve` mein `tenant.owner` — `07` §11.3. `04` ke `tenants_registry.owner_user_id` aur `kb_user_product_access` usi endpoint ka source hain, is liye yeh `04` ke data model par **koi schema change** nahi maangta.
 
 ---
 

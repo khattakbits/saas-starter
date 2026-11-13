@@ -1,8 +1,8 @@
 # 05 — Identity Hub Spec (OAuth2/OIDC, login interrupt, API contract, disable propagation)
 
-**Date:** 13 Nov 2026  
+**Date:** 13 Nov 2026 · **Revised:** 13 Nov 2026 (**v3** — path-based tenancy sync with `07`: fixed callback URI, no wildcard host allowlist, naya `GET /api/v1/users/tenants`, `tenant.owner` in `resolve`/`subscription.created`; changelog §10)  
 **Repo:** `E:/LaraProjects/saas-starter` (branch `extract/package-skeleton`)  
-**Depends on:** `docs/platform/04-CONTROL-PLANE-DESIGN.md` (§1.3 tables, §3.3 snapshot, §2.4 product contract), `docs/platform/02-ARCHITECTURE-DECISIONS.md` (§0 D1–D5, §5.4.1 handoff)  
+**Depends on:** `docs/platform/04-CONTROL-PLANE-DESIGN.md` (§1.3 tables, §3.3 snapshot, §2.4 product contract), `docs/platform/02-ARCHITECTURE-DECISIONS.md` (§0 D1–D5, §5), `docs/platform/07-MULTI-TENANCY-DESIGN.md` (§3.6 SSO flow, §3.6.1 membership source of truth, §3.7 session model) — `02` §5.4.1 ka handoff **13 Nov 2026 ko retire** ho gaya (path-based tenancy)  
 **Inputs:** `khattakbits-core/src/Http/Controllers/AuthController.php`, `khattakbits-core/src/Http/Middleware/EnsureUserActive.php`, `khattakbits-ui/src/login3d/submitLogin.js`, `resources/js/Pages/Auth/Login.vue`, `config/auth.php`, `config/session.php`, `composer.json`, `.env`  
 **Rule:** Design only. Koi migration, model ya controller nahi likha gaya.
 
@@ -188,9 +188,12 @@ Yeh split jaan boojh kar hai: Passport ka core (auth code, PKCE verify, token st
 | GET    | `/.well-known/openid-configuration` | public                        | Discovery                                                   |
 | GET    | `/api/v1/subscriptions/resolve`     | bearer (client or user)       | Snapshot                                                    |
 | GET    | `/api/v1/entitlements`              | user bearer                   | Snapshot, tenant token se                                   |
+| GET    | `/api/v1/users/tenants`             | user bearer                   | Caller ke tenants — `kb_user_tenant` ka **authoritative source** (§3.1.1) |
 | POST   | `/api/v1/subscriptions/renew-link`  | bearer                        | Checkout URL                                                |
 
 `/oauth/token`, `/oauth/authorize`, `/oauth/revoke` **Passport ke hain** — CP unhein override nahi karta. `02` §1.1 ki ghalti yahi thi ke woh inhein product ke andar dikha raha tha.
+
+**`GET /api/v1/users/tenants` 13 Nov 2026 ko add hua** (`07` §3.6.1). Yeh `oauth/userinfo` ke `products[]` claim ka replacement **nahi** — `userinfo` *product-level* access batata hai, yeh endpoint *tenant-level* membership (`tenant_id`, `slug`, `role`, `status`) deta hai. Product iske baghair `kb_user_tenant` reconcile nahi kar sakta, aur URL slug se guess karna privilege escalation hai. Poora spec §3.1.1.
 
 ### 1.3 Client registration (product create par auto)
 
@@ -200,7 +203,11 @@ Admin `POST /platform/products` kare to **usi transaction mein**:
 1. products row insert
 2. Passport client create:
      name         = "{product.name} ({product.key})"
-     redirect_uris= ["https://{domain}/auth/kb/callback"]
+     redirect_uris= ["https://{products.domain}/auth/kb/callback"]
+     // path-based (07 §1.2): {products.domain} = 'mizaanbitserp.com'.
+     // Tenant slug URL mein aata hi NAHI — callback central hai.
+     // Pehle bhi yahi tha, magar {domain} ka matlab ab explicitly
+     // products.domain hai, koi tenant host nahi (04 v5: subdomain column gaya).
      confidential = true
      password_client = false
      personal_access_client = false
@@ -222,12 +229,12 @@ Teen layer, teenon lazmi:
 | Layer           | Check                                                                                                 | Fail              |
 | --------------- | ----------------------------------------------------------------------------------------------------- | ----------------- |
 | 1. Registration | `product_oauth_clients.redirect_uris` (JSON array) — exact string match, **koi prefix/wildcard nahi** | `invalid_request` |
-| 2. Host binding | Redirect host === `products.domain` ya `tenants_registry.subdomain` us product ka                     | `invalid_request` |
+| 2. Host binding | Redirect host === `products.domain` us product ka — **exact**, koi `{slug}.` prefix nahi (`07` §1.2). `tenants_registry.subdomain` column hi nahi raha (`04` v5) | `invalid_request` |
 | 3. Scheme       | `https` lazmi (localhost exempt sirf `APP_ENV=local`)                                                 | `invalid_request` |
 
 **Exact match kyun, prefix nahi:** `https://mizaanbitserp.com/auth/kb/callback` ko prefix-match karne se `https://mizaanbitserp.com/auth/kb/callback.evil.com` bhi pass ho jata. OAuth 2.1 (draft-ietf-oauth-v2-1) exact match recommend karta hai, aur RFC 9700 §2.1 bhi.
 
-**Path:** har product ka callback **fixed** hai — `/{prefix}/auth/kb/callback`. Product `kb-product.json` mein apna callback path declare karta hai, admin usay confirm karta hai. Free-form redirect URI input **nahi** hoga.
+**Path:** har product ka callback **fixed** hai — `https://{products.domain}/auth/kb/callback`. Path-based tenancy ne isay **aur** simple kar diya: pehle `{domain}` par yeh sawal tha ke kaunsa host callback karega (tenant subdomain ya central), ab **ek hi host** hai — product ka central domain — aur tenant slug callback URL mein aata hi nahi (`07` §1.2, §3.6). Is liye `{domain}` interpolation bhi khatam: value `products.domain` hai, bas. Product `kb-product.json` mein apna callback path declare karta hai, admin usay confirm karta hai. Free-form redirect URI input **nahi** hoga.
 
 ### 1.5 Scopes
 
@@ -390,7 +397,9 @@ GET /.well-known/openid-configuration
 
 |  |  |  |  |  |
 | --- | --- | --- | --- | --- |
-**`roles` honesty:** tenant-level roles product ki DB mein hain (`kb_user_tenant`), CP ke paas nahi. CP sirf `kb_user_product_access.role` (`owner|admin|member|billing|viewer`) deta hai. Doc mein `roles` rakha hai magar woh **product-level** role hai — product apne tenant roles khud lagata hai. Yeh `02` §5.1 ke `kb_user_tenant` design se consistent hai.
+**`roles` honesty:** tenant-level roles product ki DB mein hain (`kb_user_tenant`), CP ke paas nahi. CP sirf `kb_user_product_access.role` (`owner|admin|member|billing|viewer`) deta hai. Doc mein `roles` rakha hai magar woh **product-level** role hai — product apne tenant roles khud lagata hai. Yeh `02` §5.1 ke `kb_user_tenant` design se consistent hai. **13 Nov 2026:** `07` §6.6.2 isay
+`kb_user_tenant.role_hint` mein store karta hai — **authority tenant DB ke `model_has_roles` par hai**,
+hint CP par. `Gate` `role_hint` ko padhta hi nahi; woh sirf UI badge, audit, aur "owner kaun hai" ke liye hai.
 
 ### 1.9 Refresh token policy
 
@@ -427,7 +436,7 @@ Pehle `403 access_denied` page render hota tha. Woh ghalat hai: user CP par pahu
 RFC 6749 §4.1.2.1 kehta hai authorization errors `redirect_uri` par `error` + `state` ke saath wapas bhejo:
 
 ```
-302 Location: https://acme.mizaanbitserp.com/auth/kb/callback
+302 Location: https://mizaanbitserp.com/auth/kb/callback
                 ?error=access_denied
                 &error_description=No+access+to+this+product
                 &state={original_state}
@@ -456,7 +465,7 @@ RFC 6749 §4.1.2.1 kehta hai authorization errors `redirect_uri` par `error` + `
 |---|---|
 | `POST /login` | `AuthController::store()` — `Auth::attempt` + `is_active` check, phir `redirect()->intended('/')` |
 | `redirect_uri` / `return_to` | Query ya body se padha jata hai, `isSafeRedirect()` se validate |
-| `isSafeRedirect()` | Relative paths allow; absolute sirf `ALLOWED_SSO_HOSTS` + `app.url` host |
+| `isSafeRedirect()` | Relative paths allow; absolute sirf `ALLOWED_SSO_HOSTS` + `app.url` host. **Path-based mein relative-path allow karna hi kaafi hai** — product aur CP alag hosts hain, magar tenant switch **same host** par hota hai (`07` §3.6) |
 | 3D login | `Login.vue` → `submitLogin({ url: '/login' + window.location.search })` |
 | `/oauth/*` routes | **Koi nahi** — `php artisan route:list` khali |
 | `users.token_version` | **Column maujood nahi** — zero references (`02` §2.4 ne plan kiya tha, implement nahi hua) |
@@ -567,7 +576,7 @@ Yeh function `redirect_uri`/`return_to` handle karta hai — OAuth ke bahar wale
 
 | # | Gap | Aaj ka behaviour | Fix |
 |---|---|---|---|
-| **G1** | **`ALLOWED_SSO_HOSTS` khaali hai** — `.env`, `.env.example`, `config/` mein maujood hi nahi | `array_filter(explode(',', ''))` = `[]`, sirf `app.url` host bachta hai. Cross-product redirect **chupchap** `redirect()->intended('/')` par gir jata hai | Static env **hatao**. Allowlist DB se: `products.domain` + `tenants_registry.subdomain`, wildcard-aware (`*.{products.domain}`). `04` ke `products` table ne yeh possible bana diya |
+| **G1** | **`ALLOWED_SSO_HOSTS` khaali hai** — `.env`, `.env.example`, `config/` mein maujood hi nahi | `array_filter(explode(',', ''))` = `[]`, sirf `app.url` host bachta hai. Cross-product redirect **chupchap** `redirect()->intended('/')` par gir jata hai | Static env **hatao**. Allowlist DB se: `products.domain` + `app.url` host — **exact match, https only**. **Wildcard ki zaroorat khatam**: path-based mein tenant ka apna host hota hi nahi (`07` §1.2). `04` ke `products` table ne yeh possible bana diya |
 | **G2** | **Scheme check nahi** | `javascript://app.example.com/%0aalert(1)` → host `app.example.com` → **allowed**. `http://` downgrade bhi allowed | `parse_url()['scheme']` `https` hona lazmi (localhost exempt) |
 | **G3** | **CR/LF check nahi** | `https://app.example.com/%0d%0aSet-Cookie:x=1` header injection | `preg_match('/[\r\n\0]/', $target)` → reject |
 | **G4** | **`state`/`nonce` ka koi concept nahi** | Redirect target sirf URL hai; koi CSRF binding nahi | OAuth path `oauth_auth_requests` se chalta hai (§2.3) — `isSafeRedirect` sirf legacy path ke liye rahe |
@@ -580,11 +589,16 @@ Yeh function `redirect_uri`/`return_to` handle karta hai — OAuth ke bahar wale
 $allowedHosts = array_filter(array_map('trim', explode(',', (string) env('ALLOWED_SSO_HOSTS', ''))));
 $allowedHosts[] = $appHost;
 
-// NAYA — DB se, per-product
-// 1. products.domain  ('mizaanbitserp.com')
-// 2. tenants_registry.subdomain ('acme.mizaanbitserp.com')
-// 3. exact host match, ya host === domain, ya host ends_with '.'.domain
-// Cache: kb:sso:hosts:{product_id}, TTL 300s, product save par forget
+// NAYA — DB se, per-product, EXACT match (koi wildcard nahi)
+// 1. products.domain        ('mizaanbitserp.com')   — product ka central host
+// 2. config('app.url') host ('app.khattakbits.com') — CP khud
+// 3. host === candidate (strict) AUR scheme === 'https' (localhost exempt)
+//
+// Path-based hone se tenant host ka concept hi nahi raha:
+// 'acme.mizaanbitserp.com' jaisa koi host exist nahi karta, is liye
+// '.'.domain ends_with check BHI hat gaya — woh wildcard ka aakhri
+// nishan tha (07 §1.2). Allowlist ab do exact strings hai.
+// Cache: kb:sso:hosts, TTL 300s, product save par forget
 ```
 
 `env()` ko **request path** par call karna khud ek bug hai: `config:cache` ke baad `env()` `null` deta hai. Yeh `G1` ko chhupa deta hai production mein (staging par chalta hai, prod par nahi) — classic.
@@ -614,12 +628,68 @@ Base: `https://app.khattakbits.com`. Version URL path mein (`/api/v1/`), payload
 | `GET /api/v1/subscriptions/resolve` | ✅ koi bhi tenant of that product | ✅ sirf apne tenant | Server-to-server default |
 | `GET /api/v1/entitlements` | ✅ | ✅ | User path `X-KB-Tenant` lazmi |
 | `GET /api/v1/users/changes` | ✅ **sirf** | ❌ | Product-level feed — ek user ka nahi |
+| `GET /api/v1/users/tenants` | ❌ | ✅ **sirf** | User ke tenants — `kb_user_tenant` ka source (§3.1.1) |
 | `POST /api/v1/subscriptions/renew-link` | ✅ | ✅ | Client path `tenant_id` body mein |
 | `POST /oauth/introspect` | ✅ **sirf** | ❌ | RFC 7662 |
 | `POST /oauth/revoke` | ✅ **sirf** | ❌ | RFC 7009 |
 | `GET /oauth/userinfo` | ❌ | ✅ **sirf** | `openid` scope |
 
 **Client credentials token product-scoped hota hai:** `client_id` → `product_oauth_clients.product_id`. Woh **sirf usi product** ke tenants resolve kar sakta hai. Doosre product ka `tenant_id` bheja → `403 tenant_not_in_scope`. Yeh cross-product data leak rokta hai.
+
+### 3.1.1 `GET /api/v1/users/tenants` — membership ka authoritative source
+
+Yeh endpoint **13 Nov 2026 ko add hua** (`07` §3.6.1). Yeh `oauth/userinfo` ke `products[]` claim ka
+replacement **nahi** — dono ka scope alag hai:
+
+| Cheez | `userinfo.products[]` | `users/tenants` |
+|---|---|---|
+| Level | **product**-level access | **tenant**-level membership |
+| Sawal | "is user ke paas is product ka access hai?" | "is user ka is tenant mein kya role hai?" |
+| Source | `kb_user_product_access` | `tenants_registry` ⋈ `kb_user_product_access` |
+| Kaun use karta hai | Entitlement gate | `kb_user_tenant` reconciliation (`07` §3.6.1) |
+
+```
+GET /api/v1/users/tenants
+Authorization: Bearer <user access token>
+Accept: application/json
+If-None-Match: W/"a71c..."
+```
+
+```json
+{
+  "schema": 1,
+  "tenants": [
+    { "tenant_id": "01JQ8Z3K7M4X2V9B5N1C6D0RTA", "slug": "acme",
+      "product_key": "mizaan", "role": "owner", "status": "active" },
+    { "tenant_id": "01JQ8Z4N2P6R3T9V5W1X7Y0B2C", "slug": "beta",
+      "product_key": "mizaan", "role": "member", "status": "read_only" }
+  ],
+  "etag": "W/\"a71c...\""
+}
+```
+
+**Rules:**
+
+| Rule | Detail |
+|---|---|
+| Scope | **sirf** user bearer. Client-credentials token → `403 invalid_token` — product ko ek user ke tenants nahi chahiye, woh `users/changes` se kaam karta hai |
+| `product_key` filter | Optional `?product_key=mizaan`. Diya to sirf usi product ke tenants, aur client token ka product scope bhi lagta hai |
+| `slug` | **Authoritative.** Product apne local `tenants.slug` se compare kare; mismatch par **alert**, chupchap overwrite nahi (`07` §3.6.1 step 2) |
+| `role` | CP ka **product-level** role = `kb_user_tenant.role_hint`. Authority tenant DB ke `model_has_roles` par hai (§1.8) |
+| `status` | `tenants_registry.status` — `provisioning`, `active`, `read_only`, `suspended`. **`archived` rows aate hi nahi** (query filter) |
+| `etag` | `resolve` ki tarah — `If-None-Match` par `304`. Polling endpoint hai, is liye `Cache-Control: private, max-age=60` |
+| Empty | `{"schema":1,"tenants":[]}` — `404` **nahi**. "Is user ka koi tenant nahi" ek valid jawab hai |
+
+**Yeh endpoint `kb_user_tenant` ka pehla aur aakhri source hai.** URL ka `{tenant}` slug, `return_to` ka path,
+`userinfo.products[]` akela, aur `resolve` ka `tenant_id` akela — inmein se **koi bhi** row banane ka jawaz
+nahi (`07` §3.6.1 ka "source hain hi nahi" table). Wajah saaf hai: slug user ke control mein hai, `return_to`
+bhi URL se aata hai, `products[]` product-level hai, aur `resolve` per-tenant call hai — membership **list**
+nahi deta.
+
+**Failure par fail-closed:** endpoint `5xx` de to product **purani `kb_user_tenant` rows waise hi rakhe**
+(revoke na kare) aur user ko sirf usi tenant tak access de jiske liye `/{slug}` khula aur jiska `resolve` pass
+hua. "CP down hai to sab kuch allow" ghalat hai; "CP down hai to kuch bhi **naya** na banao" sahi hai
+(`07` §3.8).
 
 ### 3.2 `GET /api/v1/subscriptions/resolve`
 
@@ -646,6 +716,8 @@ If-None-Match: W/"9f2c4a1e..."
   "limits": { "seats": 25, "warehouses": 3 },
   "quotas": { "api.calls": { "limit": 50000, "unit": "calls", "reset": "month" } },
   "modules": { "accounting": "active", "inventory": "active", "payroll": "removed" },
+  "tenant": { "slug": "acme",
+              "owner": { "kb_user_id": 47, "email": "owner@acme.pk", "name": "Ayesha Khan" } },
   "version": 7
 }
 ```
@@ -656,6 +728,15 @@ Cache-Control: private, max-age=30
 X-KB-API-Version: 1
 X-KB-Entitlements-Version: 7
 ```
+
+**`tenant.owner` 13 Nov 2026 ko add hua** (`07` §6.6.1). Product ko provisioning ke waqt owner ka
+`kb_user_id` + `email` + `name` chahiye hota hai (tenant DB mein mirror user + `kb_user_tenant` row +
+`owner` role). Teen cases mein `resolve` hi fallback hai: `subscription.created` webhook miss ho jaye,
+tenant DB restore ho jaye, ya `owner_mapping` state fail ho kar retry ka intezar kare.
+
+`owner` **`null` ho sakta hai** (`tenants_registry.owner_user_id` set na ho). Us case mein product ko
+`tenant.provisioned` ka intezar karna hoga — apna guess (email match, pehla user) **nahi** karna.
+Email se owner guess karna account takeover ka rasta hai (`07` §3.6.1).
 
 **304** — `If-None-Match` match, **empty body**. Yeh `02` §1.2 step 9 ka mechanism hai.
 
@@ -714,7 +795,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 { "tenant_id": "01JQ8Z3K7M4X2V9B5N1C6D0RTA",
-  "return_url": "https://acme.mizaanbitserp.com/billing/return",
+  "return_url": "https://mizaanbitserp.com/acme/billing/return",
   "plan_key": "growth" }
 ```
 
@@ -731,7 +812,7 @@ Content-Type: application/json
 
 | Rule | Detail |
 |---|---|
-| `return_url` validation | Host `tenants_registry.subdomain` ya `products.domain` ke against exact match. Free-form **nahi** |
+| `return_url` validation | **Host** = `products.domain`, exact, https only — path-based mein tenant ka apna host nahi (`07` §1.2). **Path** = `/{tenant_slug}/...` hona lazmi, aur slug usi tenant ka hona lazmi jo `tenant_id` mein aaya; warna user doosre tenant ke page par land kar jata hai. Free-form **nahi** |
 | Token | Signed (`t=`), 30 min, single use, tenant-bound. Checkout controller verify karta hai |
 | Idempotency | `return_url + tenant_id` 5 min ke andar dobara → **wahi** invoice (naya nahi). `invoices.idempotency_key` use hota hai |
 | `plan_key` optional | Nahi diya to current plan. Diya to upgrade/downgrade — proration invoice item banti hai |
@@ -908,8 +989,8 @@ token=eyJ...&token_type_hint=refresh_token
 
 | Event | Trigger | `data` keys |
 |---|---|---|
-| `tenant.provisioned` | Product ne tenant DB bana kar `kb_tenant_id` diya | `tenant_id`, `slug`, `subdomain`, `owner_user_id` |
-| `subscription.created` | `∅ → trialing\|active` | `subscription_id`, `status`, `plan_key`, `seats`, `period` |
+| `tenant.provisioned` | Product ne tenant DB bana kar `kb_tenant_id` diya | `tenant_id`, `slug`, `product_url`, `owner_user_id` — `subdomain` 13 Nov 2026 ko hata (`04` v5) |
+| `subscription.created` | `∅ → trialing\|active` | `subscription_id`, `status`, `plan_key`, `seats`, `period`, **`tenant.owner`** = `{kb_user_id, email, name}` — **lazmi** (`07` §6.6.1) |
 | `subscription.renewed` | Payment verified, period shift | + `previous_period` |
 | `subscription.grace` | `period_end`/`trial_ends_at` cross | + `grace_ends_at` |
 | `subscription.expired` | `grace_ends_at` cross | + `expired_at` |
@@ -952,7 +1033,7 @@ token=eyJ...&token_type_hint=refresh_token
 ### 4.3 Signature + replay protection
 
 ```
-POST https://acme.mizaanbitserp.com/webhooks/kb
+POST https://mizaanbitserp.com/webhooks/kb
 Content-Type: application/json
 User-Agent: KhattakBits-Webhook/1
 X-KB-Event-Id: 01JQ8Z4N2P6R3T9V5W1X7Y0B2C
@@ -1139,7 +1220,7 @@ sequenceDiagram
 Product session middleware ko **har request** par yeh karna hoga:
 
 ```
-1. session mein token_expires_at store hai (handoff ke waqt set hua, §5.5 of 02)
+1. session mein token_expires_at store hai (SSO callback ke waqt set hua, `07` §3.6)
 2. if (now < token_expires_at - 30s)  -> aage barho
 3. else:
      attempt refresh (POST /oauth/token, grant_type=refresh_token)
@@ -1151,7 +1232,7 @@ Product session middleware ko **har request** par yeh karna hoga:
 
 | Rule | Kyun |
 |---|---|
-| `token_expires_at` **handoff ke waqt** set ho | Sirf `access_token` ka TTL product ko pata hona chahiye — JWT ka `exp` decode karna optional hai, session value authoritative |
+| `token_expires_at` **SSO callback ke waqt** set ho | Sirf `access_token` ka TTL product ko pata hona chahiye — JWT ka `exp` decode karna optional hai, session value authoritative |
 | 30s **skew margin** | Request ke dauraan token expire na ho |
 | Refresh fail → session **destroy**, sirf error nahi | Warna agla request phir wahi expire token use karega |
 | Refresh fail → `302` SSO, `401` nahi | User ko dobara login ka rasta mile; `401` par woh atak jata hai |
@@ -1352,6 +1433,11 @@ Feature tests, `tests/Feature/Identity/`. ~42 tests.
 | T40 | login regenerates the session id, `intent` still resolves (row re-bound to the new id, `consumed_at` set) | §2.3 — `regenerate()` breaks the binding |
 | T41 | feed: cursor returns only rows **after** it, and only for that product | §3.5 isolation |
 | T42 | feed: cursor older than retention → `409 cursor_expired`; `full=1` returns the current blocked set | Recovery path |
+| T43 | `users/tenants` with a client-credentials token → `403 invalid_token` (user bearer only) | §3.1.1 scope |
+| T44 | `users/tenants` returns `slug` + `role` + `status`; an `archived` tenant is **absent** | §3.1.1 source |
+| T45 | `users/tenants` for a tenant-less user → `200 {"tenants":[]}`, **not** `404` | §3.1.1 empty |
+| T46 | `resolve` body carries `tenant.owner.{kb_user_id,email,name}`; when `owner_user_id` is null, `tenant.owner` is `null` (key present, not omitted) | `07` §6.6.1 |
+| T47 | renew-link `return_url` right host but `/{slug}` of a **different** tenant → `400 return_url_not_allowed` | §3.4 path check |
 
 
 **T20 ka detail:** snapshot `04` §3.3 se **key-for-key** compare karein (recursive `assertSame` on sorted keys). Yeh test contract drift pakadta hai — warna product aur CP chupchap diverge karte hain.
@@ -1373,9 +1459,10 @@ Feature tests, `tests/Feature/Identity/`. ~42 tests.
 | **I4** | API: resolve, entitlements, **users/changes feed**, renew-link, introspect, revoke + rate limits + versioning | 4.5d |
 | **I5** | Webhooks: envelope, HMAC, retry/backoff, delivery log, replay, admin replay | 3d |
 | **I6** | Disable propagation: `user_security_changes` fan-out, `EnsureTokenFresh` middleware in core, session purge | 3d |
-| **I7** | Tests (T1–T42) + docs | 3d |
+| **I7** | Tests (T1–T47) + docs | 3d |
+| **I8** | `GET /api/v1/users/tenants` — query, `product_key` filter, ETag, `Cache-Control`, fail-closed contract (`07` §3.6.1) | 1d |
 
-**Total ≈ 25.5 days ≈ 5.5 hafte solo; 2 devs par ~3 hafte** (I2/I3 parallel, I5/I6 parallel; I1 → I4 sequential).
+**Total ≈ 26.5 days ≈ 5.5 hafte solo; 2 devs par ~3 hafte** (I2/I3 parallel, I5/I6 parallel; I1 → I4 sequential).
 
 **Dependencies:** I0 blocking — aur I0 mein **package release** shamil hai, kyunke migration core package mein hai (§5.1.1). I1 CP ke `products` table par depend (S1 of `04`). I4 `subscriptions` par (S3 of `04`). I5 `webhook_endpoints` par (S7 of `04`). I6 `users` columns par (I0) aur `EnsureTokenFresh` par (I0 ka package release).
 
@@ -1383,12 +1470,14 @@ Feature tests, `tests/Feature/Identity/`. ~42 tests.
 
 **Effort badhne ki wajah (v1 → v2):** I3 +0.5d (session re-bind + parallel-login race), I4 +0.5d (naya feed endpoint + cursor handling), I0 +0.5d (CI + package release process). Kul +1.5d, magar do design bugs band hue jo production mein mehngay padte (login interrupt kabhi kaam na karna; feed ka rate limit tor dena).
 
+**Effort badhne ki wajah (v2 → v3):** naya I8 +1d (`users/tenants`). Yeh endpoint **blocking** hai — `07` §6.6.3 ka `TenantOwnerMapper` aur §3.6.1 ka `ReconcileMemberships` dono iske baghair ship nahi ho sakte. Iske sath I1 ka host-binding check **simpler** hua (wildcard/ends_with logic gaya), magar uska bacha hua effort I8 mein chala gaya — net +1d.
+
 ---
 
 ## 9. Still open
 
 1. **Introspection caching store** — `cache` table ya Redis? Ab jab introspect **on-demand** hai (§3.5.1), load per-session polling wala nahi raha — peak ≈ sensitive writes/sec (100–200 req/s maan lein), na ke 5,000 req/s. Is liye Phase 1 mein `database` cache driver (`config/cache.php`) bilkul kaafi hai; Redis Phase 2 ki optimisation, blocking requirement nahi. **Yeh v2 mein downgrade hua** — pehle yeh Redis ka blocker tha, ab nahi.
-2. **`prompt=none` silent SSO** — product `app.` par iframe se check kare? Third-party cookie blocking (Safari/Firefox) isay todta hai. Abhi `prompt=none` sirf top-level navigation ke liye support kiya hai.
+2. **`prompt=none` silent SSO** — product ke central host par iframe se check kare? Third-party cookie blocking (Safari/Firefox) isay todta hai. Abhi `prompt=none` sirf top-level navigation ke liye support kiya hai.
 3. **`auth_time` max age** — step-up auth (`max_age=300`) kabhi chahiye? Abhi sirf claim emit hota hai, enforce nahi hota.
 
 ---
@@ -1417,6 +1506,39 @@ Feature tests, `tests/Feature/Identity/`. ~42 tests.
 | 6 | **Migration ownership** — `users.blocked_at/blocked_reason/token_version` **khattakbits-core** package repo mein, host mein nahi; `v1.5.0` tag (MINOR), deploy order, `tenants:migrate` exclusion | §5.1.1 (naya), §8 I0 | Host mein migration likhna 12 tenant DBs par drift banata hai, aur package update par column "gayab" ho jate hain. MINOR tag kyunke additive nullable + `default(0)` |
 
 **Kul asar:** do design bugs band (login interrupt ka never-working flow, feed ka rate-limit breakage), ek silent-vulnerability path band (`^13.10`), ek spec-violation band (403 → error redirect), aur ek deployment trap documented (migration ownership). Effort +1.5d (§8).
+
+---
+
+### 13 Nov 2026 — path-based tenancy sync with `07` (v3)
+
+`07-MULTI-TENANCY-DESIGN.md` ne tenancy ko **path-based** kar diya (`mizaanbitserp.com/{tenant_slug}/...`) aur
+`02` ke D3/D4 supersede kar diye. Is doc mein jo cheez **host** ke baare mein thi woh simplify hui, aur jo
+**membership** ke baare mein thi woh ek naye endpoint par depend karti hai.
+
+| # | Kya badla | Kahan | Kyun |
+|---|---|---|---|
+| 1 | `redirect_uris` `https://{domain}/...` → `https://{products.domain}/...` (explicit) | §1.3 | Path-based mein `{domain}` ka matlab `products.domain` hai — tenant host exist hi nahi karta. Wording ambiguous thi; `04` v5 ne `subdomain` column hata diya, is liye `{domain}` ka koi doosra matlab bacha nahi |
+| 2 | Host binding: `products.domain` **ya** `tenants_registry.subdomain` → sirf `products.domain`, exact | §1.4 layer 2 | Column hi nahi raha. Aur path-based mein callback central hai, is liye per-tenant host check ka sawal khatam |
+| 3 | "har product ka callback fixed" paragraph → `https://{products.domain}/auth/kb/callback` + `{domain}` interpolation khatam | §1.4 | Same wajah; aur ab "kaunsa host" ka sawal hi nahi — ek host |
+| 4 | **G1: wildcard-aware allowlist** → **exact match, https only** | §2.4 G1 + code snippet | `*.{products.domain}` wildcard ka **aakhri nishan** tha. Path-based mein koi subdomain nahi, is liye ends_with logic bhi gaya. Allowlist ab do exact strings: `products.domain` + `app.url` host |
+| 5 | `isSafeRedirect()` row: "relative paths allow" → note ke path-based mein yeh **kaafi** hai | §2.1 | Pehle cross-host redirect ki zaroorat thi (subdomain → central). Ab tenant switch same host par hai, is liye relative path hi theek hai |
+| 6 | **Naya endpoint `GET /api/v1/users/tenants`** — endpoints table, auth matrix, aur poora §3.1.1 | §1.2, §3.1, **§3.1.1 (naya)** | Yeh `kb_user_tenant` ka **authoritative source** hai (`07` §3.6.1). Iske baghair product membership slug se guess karta — jo privilege escalation hai. **Blocking dependency** |
+| 7 | `resolve` response mein **`tenant.owner = {kb_user_id, email, name}`** + `null` case | §3.2 | Re-provision, DB restore, aur webhook-miss ka fallback (`07` §6.6.1). Owner `null` ho to product guess **na** kare — email match account takeover ka rasta hai |
+| 8 | `subscription.created` ke `data` mein **`tenant.owner` lazmi** | §4.1 | Provisioning ka `owner_mapping` state iske baghair nahi chal sakta. Aaj sirf `subscription_id`, `status`, `plan_key`, `seats`, `period` thay |
+| 9 | `tenant.provisioned`: `subdomain` → `product_url` | §4.1 | `04` v5 ne column rename kiya. Warna CP ek aisa field bhejta jo product ke paas hai hi nahi |
+| 10 | renew-link: `return_url` example `https://acme.mizaanbitserp.com/...` → `https://mizaanbitserp.com/acme/...`; validation mein **path check** add | §3.4 | Host-based example path-based mein ghalat URL sikhata hai. Aur host check akela kaafi nahi: `/beta/...` bhej kar user doosre tenant ke page par land kar sakta hai |
+| 11 | `roles` honesty paragraph: `role_hint` vs `model_has_roles` | §1.8 | `07` §6.6.2 ne `kb_user_tenant.role_hint` add kiya — likhna zaroori tha ke authority tenant DB par hai, hint par nahi |
+| 12 | `prompt=none` ka "product `app.`" → "product ke central host" | §9 item 2 | Path-based mein product ka host `app.` nahi, `mizaanbitserp.com` hai |
+| 13 | Tests **T43–T47**, effort **I8 +1d**, total 25.5d → **26.5d** | §7, §8 | Naya endpoint + `tenant.owner` + path validation ke liye coverage |
+
+**Kya nahi badla:** Passport/OIDC layer, `oauth_auth_requests`, `oauth_signing_keys`, `user_security_changes`,
+PKCE, scope set, rate limits, webhook envelope/HMAC/retry, disable propagation ke 4 layers, `isSafeRedirect` ke
+G2–G5. **Table count same** (21) — `users/tenants` koi naya table nahi maangta, woh `04` ke teen
+existing tables ka JOIN hai.
+
+**Naya cross-doc dependency (yeh doc `07` ko block karta hai):** §3.1.1 aur §4.1 ke `tenant.owner` ship
+hone tak `07` ka `owner_mapping` state aur `ReconcileMemberships` **production mein nahi ja sakte**. `07` §11.3
+ne yahi note kiya tha; ab dono taraf se reference band hai.
 
 ---
 

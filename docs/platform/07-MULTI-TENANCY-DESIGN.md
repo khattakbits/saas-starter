@@ -1588,17 +1588,38 @@ $user ??= User::create([...]);   // unique index race ko pakdega
 
 ```
 vendor/khattakbits/core/database/migrations/
-├── central/          ← aaj ki 12 migrations yahan shift
-│   ├── 0001_01_01_000000_create_users_table.php
-│   ├── 2026_10_26_113043_create_attachments_table.php
-│   └── ...
-└── tenant/           ← naya, khaali shuru
-    └── (core ki koi tenant table abhi nahi — sab module mein)
+├── central/          ← 2 migrations (users + sessions)
+│   ├── 0001_01_01_000000_create_users_table.php        (users, password_reset_tokens, sessions)
+│   └── 2026_10_27_070652_add_admin_columns_to_users_table.php
+└── tenant/           ← 10 migrations (§2.2/§2.3 ka faisla, "sab central" NAHI)
+    ├── 2026_10_26_113043_create_attachments_table.php
+    ├── 2026_10_27_070653_create_settings_table.php
+    ├── 2026_10_27_070654_create_audit_logs_table.php
+    ├── 2026_10_28_061446_add_user_agent_to_audit_logs_table.php
+    ├── 2026_10_28_102652_create_document_tables.php     (deleted_documents, document_sequences)
+    ├── 2026_10_29_110000_create_document_views_table.php
+    ├── 2026_10_29_110100_add_subject_index_to_audit_logs_table.php
+    ├── 2026_10_29_120000_create_email_accounts_table.php
+    ├── 2026_10_29_120100_create_email_logs_table.php
+    └── 2026_10_29_130000_create_email_templates_table.php
+
+database/migrations/            ← host (package mein nahi, extraction ke baad yahan rahi)
+├── central/          ← 2 migrations
+│   ├── 0001_01_01_000001_create_cache_table.php       (cache, cache_locks)
+│   └── 0001_01_01_000002_create_jobs_table.php        (jobs, job_batches, failed_jobs)
+└── tenant/           ← 1 migration
+    └── 2026_10_26_101855_create_permission_tables.php (permissions, roles, model_has_*)
 
 app/Modules/Examples/Database/Migrations/
 ├── central/          ← agar module ki koi central table ho
 └── tenant/           ← demo_entries yahan
 ```
+
+**Split ka source `§2.3` hai, guess nahi.** `§2.3` ke per-table faisle se ginti: core ke **12** mein se **2 central** (`users`, `password_reset_tokens`, aur `sessions` jo usi migration mein banti hai) aur **10 tenant**; host ke **3** mein se **2 central** (`cache`, `jobs`) aur **1 tenant** (permission tables — `§2.2` kehta hai roles har tenant ke apne). Total **4 central, 11 tenant**.
+
+> **Correction (13 Nov 2026):** is section ki pehli shakal kehti thi "aaj ki 12 migrations central/ mein shift" aur "`tenant/` khaali shuru". Woh `§2.2`/`§2.3` se **seedha contradict** karta tha — `attachments`, `audit_logs`, `settings`, `email_*` sab tenant hain. Us split par chale to har tenant ka data central DB mein chala jata. Ginti ab `§2.3` se derive ki gayi hai.
+
+**`sessions` ka ek detail:** woh `create_users_table.php` ke andar banti hai, yani `central/` mein. Yeh sahi hai (`§2.1`: ek origin, ek session) magar iska matlab yeh bhi hai ke `sessions` ko **tenant DB mein banane ki koshish na karein** — `tenants:migrate` us migration ko nahi chalayega, is liye tenant DB mein `sessions` table hogi hi nahi. Product ko `session.connection = 'central'` pin karna lazmi hai (`§2.4`).
 
 **Convention:** `app/Modules/{Module}/Database/Migrations/{central,tenant}`. Do hi valid folders — koi teesra nahi.
 
@@ -2330,7 +2351,9 @@ abstract class TenantTestCase extends TestCase
 
 ---
 
-## 11. Cross-doc impact — sirf list, files **edit nahi ki gayin**
+## 11. Cross-doc impact — **applied 13 Nov 2026 (v3)**
+
+> **Status:** yeh section pehle sirf **list** thi ("files edit nahi ki gayin"). **13 Nov 2026 ko sab apply ho gaya.** Har file ka apna changelog row/section hai — `02` §7 (v3), `04` §9 (v5), `05` §10 (v3), `06` §8 (v3), `03` Part D. Neeche ki tables **record** hain: kya kahan gaya. Agar koi row dobara check karni ho to woh tables authoritative hain, files nahi.
 
 ### 11.1 `02-ARCHITECTURE-DECISIONS.md`
 
@@ -2339,7 +2362,7 @@ abstract class TenantTestCase extends TestCase
 | **§0 D3 row** (~line 26) | "Subdomain-only `{slug}.<product-domain>`" → **path-based**; TLS wildcard/DNS-01 ka poora hissa hat jayega |
 | **§0 D4 row** (~line 27) | "host-only cookies + one-time handoff token" → **same origin, koi handoff nahi** |
 | **§1.2 mermaid steps 5-6** (~line 100-115) | `P-->>U: 302 https://acme.mizaanbitserp.com/auth/handoff?token=...` step **hatana**; `app.` par login ke baad seedha `/{slug}/dashboard` |
-| **§5.1 table — `sso_handoffs` row** (~line 296) | **Delete** |
+| **§5.1 table — `sso_handoffs` row** (~line 296) | ~~Delete~~ → **RETIRED mark** (row rakhi gayi, struck through + "RETIRED 13 Nov 2026"). User rule: D3/D4 **delete nahi**, supersede — history visible rahe. Phase 2 Option B ke liye reference bhi bachta hai (`07` §13.4) |
 | **§5.1 table — `tenants`, `domains` row** (~line 294) | `domains` Phase 1 mein **unused** (path-based); Phase 2 ke liye rakhein |
 | **§5.1 table — `sessions` row** (~line 300) | Comment "Login `app.` par hota hai, phir handoff" → "ek session, ek origin" |
 | **§5.4 poora section** (~line 366-388) | Verdict **palat jata hai**: "Path ❌ Reject" row **delete**; subdomain design ko "Phase 2 alternative" mein move karein |
@@ -2822,6 +2845,7 @@ Route::get('/internal/tls-ask', function (Request $request) {
 | --- | --- | --- |
 | **v1** | 13 Nov 2026 | Initial design. `stancl/tenancy` v3.10.1 verified on PHP 8.5.12 + 8.3.27. Path-based identification (D3/D4 superseded). 12 sections + custom domains Phase 2. |
 | **v2** | 13 Nov 2026 | Paanch gaps band kiye (neeche tafseel). Effort 18.5 → **21.5 din**. Tests T1-T20 → **T1-T38**. |
+| **v3** | 13 Nov 2026 | `§11` ke changes **`02`, `04`, `05`, `06`, `03` mein apply ho gaye**; `§7.1` ka migration split `§2.3` se correct kiya (12 central nahi — **4 central, 11 tenant**); stale-reference sweep |
 
 ### v2 tafseel
 
@@ -2839,6 +2863,15 @@ Route::get('/internal/tls-ask', function (Request $request) {
 2. `subscription.created` + `resolve` mein `tenant.owner = { kb_user_id, email, name }` — owner mapping ke baghair kaam nahi karti (`05` §3.2, §4.1 mein add).
 
 Dono `§11.3` mein listed hain. **Yeh product ke Phase 1 ka blocking dependency hai** — CP se pehle ship nahi ho sakta.
+
+### v3 tafseel
+
+| # | Kya | Sections | Asar |
+| --- | --- | --- | --- |
+| **1** | **`§7.1` migration split corrected.** Pehli shakal kehti thi "aaj ki 12 migrations `central/` mein shift" + "`tenant/` khaali shuru" — jo `§2.2`/`§2.3` se seedha contradict karta tha. Ab ginti `§2.3` se derive: core **2 central / 10 tenant**, host **2 central / 1 tenant** = **4 central, 11 tenant**. Exact filenames list ke saath | **§7.1** | Us split par chale to `attachments`, `audit_logs`, `settings`, `email_*` **central** mein chali jatin — yani har tenant ka data ek hi table mein, aur `§8` ka "per-tenant everything" jhoota. Yeh v2 ke baad pakra gaya, implementation se pehle |
+| **2** | **`§11` applied** — `02` (D3/D4 superseded, §1.2 flow, §5.1/§5.4/§5.4.1 retired, §6, §7 changelog), `04` (v5: `subdomain` → `product_url`, slug immutable, 8 rows), `05` (v3: fixed callback, no wildcard allowlist, **naya `GET /api/v1/users/tenants` §3.1.1**, `tenant.owner` in `resolve`/`subscription.created`, 13 rows), `06` (v3: `Naming::next()` tenant connection, invoice link tenant param, `APP_KEY` blast radius, 4 rows), `03` (**Part D** — migration split, `core` v2.0.0, `UPGRADE.md`) | **§11** | `§11` pehle sirf **list** thi ("files edit nahi ki gayin"). Ab woh list **done** hai — magar yeh section reference rehta hai, history nahi |
+
+**v3 ka ek naya nateeja:** `05` `§3.1.1` ne `users/tenants` ka poora contract likh diya (scope, filter, ETag, empty case, fail-closed). Yani `§6.6.3` ka `TenantOwnerMapper` aur `§3.6.1` ka `ReconcileMemberships` ab **spec ke against** likhe ja sakte hain, CP ke intezar ke bagair — CP ko sirf us spec ko implement karna hai.
 
 
 

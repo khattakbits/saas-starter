@@ -1,8 +1,8 @@
 # 03 — Extraction Plan (Part A + B executed · record in Part C)
 
-**Date:** 12 Nov 2026 (Part C added after execution)
+**Date:** 12 Nov 2026 (Part C added after execution) · **Revised:** 13 Nov 2026 (**Part D** — `07` ke mutabiq path-based follow-up: migration split, `core` v2.0.0, `UPGRADE.md`; changelog neeche)
 **Repo:** `E:/LaraProjects/saas-starter` (branch `extract/package-skeleton`, off `feat/cross-db-fk`)
-**Depends on:** `docs/platform/02-ARCHITECTURE-DECISIONS.md` (§0 D1–D5, §5.5 Step 0)
+**Depends on:** `docs/platform/02-ARCHITECTURE-DECISIONS.md` (§0 D1–D5, §5.5 Step 0), `docs/platform/07-MULTI-TENANCY-DESIGN.md` (§2 table split, §7 module migrations, §11.5)
 **Rule:** Part A code hai (done). Part B plan tha — ab **execute ho chuka hai**, aur jo actually hua wo Part C mein hai (deviations ke saath).
 
 ---
@@ -411,3 +411,204 @@ grep -r "App\\Core"  → zero (app, routes, config, database, tests, bootstrap)
 php artisan route:list → login, logout, profile, attachments, forgot-password sab maujood
 ```
 
+---
+
+# PART D — `07` ke mutabiq follow-up (path-based tenancy)
+
+Part A/B/C ne extraction **complete** kar diya (`khattakbits/core` v1.x, `@khattakbits/ui` v1.x). Phir
+`07-MULTI-TENANCY-DESIGN.md` ne tenancy ko **path-based** karar diya, aur uska `§11.5` teen cheezein maangta hai
+jo extraction ke **baad** ka kaam hain — magar **package release se pehle**, kyunke woh package ka public
+contract tor rahe hain.
+
+| # | Kaam | Status | Kyun ab |
+|---|---|---|---|
+| **D1** | **Step 0 — cross-DB FK fix** (5 migrations) | ✅ **Done** — branch `feat/cross-db-fk`, extraction se pehle | `02` §5.5. Path-based tenancy se iska koi taalluq nahi, magar yeh **pehle** hona chahiye tha taake tenant DB par cross-DB FK na rahe. Verify: `grep -rn "constrained('users')\|references('users')" database/migrations vendor/khattakbits/core/database/migrations` — tenant tables mein zero hit |
+| **D2** | **Migration folder split** — `{central,tenant}` | ⬜ **Pending** — next MAJOR se pehle | Aaj `loadMigrationsFrom()` **saari** migrations dono jagah chalata hai: `php artisan migrate` central par, `php artisan tenants:migrate` har tenant par. `users` central table hai magar har tenant DB mein bhi ban jati hai; `attachments` tenant table hai magar central mein bhi. `07` §7.1 ka split isay theek karta hai |
+| **D3** | **`khattakbits/core` v2.0.0 (MAJOR)** | ⬜ **Pending** | Do breaking changes: (a) core routes ka split (`07` §3.4 — `attachments` + `document-activity` tenant ke andar `{tenant}` ke saath), (b) `menu.php` contract mein `path` key (`07` §5.3) |
+| **D4** | **`UPGRADE.md`** | ⬜ **Pending** | D3 ke dono breaking changes ke liye codemod instructions. Bina iske har product ka upgrade manual hai |
+
+## D2 · Migration split — exact inventory
+
+`07` §7.1 ka split **`§2.3` ke per-table faisle** se derive hota hai, guess se nahi. Aaj ki asli ginti:
+
+**Core package — `vendor/khattakbits/core/database/migrations/` (12 migrations → 2 central, 10 tenant):**
+
+| Migration | Tables | Kahan |
+|---|---|---|
+| `0001_01_01_000000_create_users_table.php` | `users`, `password_reset_tokens`, `sessions` | **central** |
+| `2026_10_27_070652_add_admin_columns_to_users_table.php` | `users` (alter) | **central** |
+| `2026_10_26_113043_create_attachments_table.php` | `attachments` | tenant |
+| `2026_10_27_070653_create_settings_table.php` | `settings` | tenant |
+| `2026_10_27_070654_create_audit_logs_table.php` | `audit_logs` | tenant |
+| `2026_10_28_061446_add_user_agent_to_audit_logs_table.php` | `audit_logs` (alter) | tenant |
+| `2026_10_28_102652_create_document_tables.php` | `deleted_documents`, `document_sequences` | tenant |
+| `2026_10_29_110000_create_document_views_table.php` | `document_views` | tenant |
+| `2026_10_29_110100_add_subject_index_to_audit_logs_table.php` | `audit_logs` (alter) | tenant |
+| `2026_10_29_120000_create_email_accounts_table.php` | `email_accounts` | tenant |
+| `2026_10_29_120100_create_email_logs_table.php` | `email_logs` | tenant |
+| `2026_10_29_130000_create_email_templates_table.php` | `email_templates` | tenant |
+
+**Host — `database/migrations/` (3 migrations → 2 central, 1 tenant):**
+
+| Migration | Tables | Kahan |
+|---|---|---|
+| `0001_01_01_000001_create_cache_table.php` | `cache`, `cache_locks` | **central** |
+| `0001_01_01_000002_create_jobs_table.php` | `jobs`, `job_batches`, `failed_jobs` | **central** |
+| `2026_10_26_101855_create_permission_tables.php` | `permissions`, `roles`, `model_has_permissions`, `model_has_roles`, `role_has_permissions` | **tenant** |
+
+**Total: 4 central, 11 tenant.**
+
+> **Yeh ginti zaroori kyun hai:** `07` §7.1 ki pehli shakal kehti thi "aaj ki 12 migrations `central/` mein shift" aur "`tenant/` khaali shuru" — jo `§2.2`/`§2.3` se **seedha contradict** karta tha. Us split par chale to `attachments`, `audit_logs`, `settings`, `email_*` sab **central** mein chali jatin: yani har tenant ka data ek hi table mein, aur `§8` ka "per-tenant everything" jhoota. `07` v3 mein correct ho gaya — lekin **yeh ginti implementation se pehle verify karein**, kyunke naya module add hone par badlegi.
+
+**Permission tables ka move khaas hai.** Woh aaj **host** ki `database/migrations/` mein hain, package mein nahi — extraction ke waqt woh yahin chhod di gayin (Part C, "Kya kahan gaya"). `§2.3` kehta hai roles **per-tenant** hain, is liye woh `database/migrations/tenant/` mein jayengi. Agar woh central mein rah jayein to **saare tenants ek doosre ke roles dekh lete hain** — aur spatie ka cache key issue (`§2.3.1a`) us ke upar privilege escalation bana deta hai.
+
+**`sessions` ka ulat-pher:** woh `create_users_table.php` ke **andar** banti hai, yani `central/` mein jayegi. Yeh sahi hai (`§2.1`: ek origin, ek session) — magar iska matlab yeh hai ke **tenant DB mein `sessions` table hogi hi nahi**, kyunke `tenants:migrate` us migration ko nahi chalayega. Is liye `session.connection = 'central'` pin karna (`§2.4`) optional nahi, **lazmi** hai.
+
+### D2.1 Provider change (`07` §7.3 ka exact diff)
+
+```php
+// Aaj — CoreServiceProvider.php:53-61
+$this->loadMigrationsFrom($this->packagePath('database/migrations'));
+
+foreach ($this->app->make(ModuleRegistry::class)->all() as $module) {
+    $migrations = $module['path'].'/Database/Migrations';
+    if (is_dir($migrations)) {
+        $this->loadMigrationsFrom($migrations);
+    }
+}
+```
+
+```php
+// Naya — do context, do commands
+$registry = $this->app->make(ModuleRegistry::class);
+
+// 1) CENTRAL — `php artisan migrate` inhi ko chalata hai
+$this->loadMigrationsFrom($this->packagePath('database/migrations/central'));
+
+foreach ($registry->migrationPaths('central') as $path) {
+    $this->loadMigrationsFrom($path);
+}
+
+// 2) TENANT — `loadMigrationsFrom` se register NAHI karenge, warna
+//    `php artisan migrate` unhein bhi central DB par chala dega.
+if (class_exists(\Stancl\Tenancy\Tenancy::class)) {
+    $params = config('tenancy.migration_parameters');
+
+    $params['--path'] = array_values(array_filter(
+        array_merge(
+            [$this->packagePath('database/migrations/tenant')],
+            array_values($registry->migrationPaths('tenant')),
+        ),
+        'is_dir',
+    ));
+
+    config(['tenancy.migration_parameters' => $params]);
+}
+```
+
+**Teen traps jo Part B ke risks mein nahi thay:**
+
+1. **`config(['tenancy.migration_parameters.--path' => ...])` kaam nahi karta.** `Arr::set()` dot ko nesting samajhta hai — `'--path'` do level ban jata hai. **Poora array** replace karna hoga, jaisa upar hai.
+2. **`class_exists` guard lazmi.** `khattakbits/core` ko pata nahi hona chahiye ke product multi-tenant hai ya nahi — warna starter kit (single-tenant) tenancy package par depend karne lagega.
+3. **`--path` array hai, string nahi.** `MigrateCommand` `--path` milne par **sirf** wohi paths use karta hai (`BaseCommand::getMigrationPaths()`), `migrator->paths()` ignore karta hai. Is liye core + saare modules ki tenant migrations **usi ek array** mein aani chahiye.
+
+### D2.2 Filename immutability — sab se aasan galti
+
+Split ke baad `migrations` table mein purane entries `central/` ke naam se hain, naye `tenant/` se. Laravel
+migration ko **filename** se match karta hai, path se nahi. Is liye:
+
+> **Folder badle, filename bilkul na badle.**
+
+Agar `2026_10_26_113043_create_attachments_table.php` ko `tenant/` mein move karte waqt rename kar diya, to
+`tenants:migrate` usay **pending** samajh kar dobara chalayega aur `table already exists` par fail hoga — har
+tenant par, provisioning ke beech mein.
+
+**Migration ke liye ek test:** `tests/Feature/Tenancy/MigrationSplitTest.php` — do tenants provision karein,
+phir `SELECT table_name FROM information_schema.tables WHERE table_schema = ...` se verify karein ke tenant DB
+mein **`users` nahi hai** aur `attachments` **hai**. Yeh test D2 ke baad permanent rehna chahiye, kyunke split
+ki galti sirf runtime par dikhti hai.
+
+## D3 · `khattakbits/core` v2.0.0 — do breaking changes
+
+### D3.1 Core routes ka split (`07` §3.4)
+
+Aaj `core/routes/web.php` mein `attachments` aur `document-activity` **central** hain. Path-based mein woh
+**tenant-scoped** hain:
+
+```php
+// v1.x — central
+Route::get('/attachments/{attachment}', [AttachmentController::class, 'show']);
+
+// v2.0 — tenant ke andar, {tenant} PEHLA param
+Route::get('/{tenant}/attachments/{attachment}', [AttachmentController::class, 'show']);
+```
+
+**`{tenant}` pehla parameter hona lazmi hai.** `InitializeTenancyByPath` `parameterNames()[0]` padhta hai
+(`07` §1.2). `/{tenant}/attachments/{attachment}` theek hai; `/attachments/{tenant}/{attachment}` **nahi** —
+woh chupchaap non-tenant route ban jayega aur `AttachmentController` central DB par attachment dhoondega.
+
+**Route names na badlein.** `attachments.show` hi rahe — sirf URI badalta hai. Warna har host ke `route()`
+calls toot jayenge aur codemod ka scope barh jayega.
+
+### D3.2 `menu.php` contract mein `path` key (`07` §5.3)
+
+Yeh subtle hai aur ise miss karna **production bug** hai. Aaj `AccountingDemo/routes.php:8` menu ka `href`
+**route URI** ke tor par use karta hai:
+
+```php
+// v1.x — href hi route URI hai
+Route::get($item['href'], ...);
+```
+
+Agar hum `href` mein slug daal dein (`/acme/accounting/invoices`), to **route registration** mein slug bake ho
+jayega — yani `acme` ke liye register hui route, `beta` ke liye nahi. Tenant A ki routes banti hain, tenant B
+ki 404. Is liye do alag keys:
+
+```php
+// v2.0
+[
+    'key'  => 'accounting.invoices',
+    'path' => '/accounting/invoices',              // NAYA — route URI, slug-free, static
+    'href' => tenantUrl('/accounting/invoices'),   // runtime, slug ke saath
+]
+```
+
+`path` **static** hai (route registration ke liye), `href` **runtime** hai (`tenantUrl()` se, `07` §5.2).
+Host ka `routes.php` `path` par register karega aur route ko `{tenant}` group ke andar rakhega.
+
+**Yeh v2.0 (MAJOR) kyun hai:** har product ka `menu.php` **aur** har product ka `routes.php` touch hota hai.
+MINOR mein nahi ho sakta — aur agar galti se MINOR mein chala diya, to purane products ka `routes.php` `href`
+par register karta rahega aur **`path` key ko ignore karega**, yani menu dikhega magar route nahi milega.
+
+## D4 · `UPGRADE.md` — kya likhna hai
+
+Package repo mein `UPGRADE.md` (v1 → v2), teen sections:
+
+1. **Route split** — agar host ne core routes `route()` se generate kiye hain to `tenant_url()` par switch karein; agar `href` hardcode hai to `path` + `tenantUrl()` pattern par jayein. `route('attachments.show', ...)` ab `{tenant}` param maangega — `07` §1.3 ka `URL::defaults` sirf tab kaam karta hai jab request mein tenancy initialized ho.
+2. **`menu.php` `path` key** — har menu item mein `path` add karein (slug-free route URI). **Codemod:** `href` se leading `/{slug}` strip kar ke `path` mein daal dein, aur `href` ko `tenantUrl(path)` se replace karein. `07` §5.4 ka CI gate (C1–C7) is codemod ka automated version hai — `UPGRADE.md` usi ko link kare.
+3. **Migrations** — `{central,tenant}` split ke baad `php artisan migrate` **aur** `php artisan tenants:migrate` dono chalane hain; filename na badalne ki wajah (D2.2) aur "table already exists" ka ilaaj.
+
+**`UPGRADE.md` ka ek chautha section jo `07` mein nahi tha — lekin zaroori hai:** **rollback**. Agar product v2.0
+par upgrade kar ke `path` key bhool jaye, to usay v1 par wapas jane ka rasta chahiye. Likhein: v2 routes `{tenant}`
+ke baghair bhi **register** nahi hoti (middleware fail karti hai), is liye rollback = package pin `^1.4` + `menu.php`
+revert + `composer update`. Yeh 10 minute ka kaam hona chahiye, nahi to koi upgrade karega hi nahi.
+
+---
+
+## Changelog
+
+| v | Date | Kya |
+|---|---|---|
+| **v1** | 12 Nov 2026 | Part A (attachment IDOR fix, forbidden demo route, CI, test run) + Part B (target layout, move order, namespace strategy, host consumption, checklist, risks) |
+| **v2** | 12 Nov 2026 | **Part C** — jo actually hua: steps 2–9 executed, 117 tests / 588 assertions, 8 deviations (migrations step 3 mein, `User` poora model, config duplicate, `Support\Users`, package base controller, Vite `dedupe`, `@core` alias, `dev-main` constraint), 2 cheezein jo nahi ki gayin, rollback, aakhri verification |
+| **v3** | 13 Nov 2026 | **Part D** — `07` §11.5 ke teen follow-up items: D1 Step 0 (done, verify command), **D2 migration split** (exact inventory: core 2 central/10 tenant, host 2 central/1 tenant = **4/11**; provider diff; 3 traps; filename immutability; split test), **D3 `core` v2.0.0** (route split with `{tenant}` first param, `menu.php` `path` key + why it is MAJOR), **D4 `UPGRADE.md`** (4 sections incl. rollback) |
+
+**Part D ka asar:** extraction **complete** hai — Part D usay **multi-tenant** banata hai, aur woh package ke
+public contract ko tor raha hai (routes + menu). Is liye yeh **v2.0.0 (MAJOR)** hai, aur isay `07` §12 ke effort
+(items 2, 3, 5, 7 — kul ≈ 6.5 din) mein gina gaya hai, `03` ke apne effort mein nahi — warna woh kaam do
+jagah count hoga.
+
+---
+
+*Yeh document record hai — Part A/B/C executed, Part D planned. Part D ke teen items **pending** hain aur unka
+effort `07` §12 mein hai, is doc mein nahi.*

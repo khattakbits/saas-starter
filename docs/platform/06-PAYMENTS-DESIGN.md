@@ -1,8 +1,8 @@
 # 06 — Payments Design (Pakistan / PKR)
 
-**Date:** 13 Nov 2026  
+**Date:** 13 Nov 2026 · **Revised:** 13 Nov 2026 (**v3** — path-based tenancy sync with `07`: `Naming::next()` tenant connection, invoice link tenant param, `APP_KEY` blast radius; changelog §8)  
 **Repo:** `E:/LaraProjects/saas-starter` (branch `extract/package-skeleton`)  
-**Depends on:** `04-CONTROL-PLANE-DESIGN.md` (§1.3 `payments`/`invoices`, §2 state machine, §2.3 scheduler, §2.4 product contract, §5.3 checkout flow, §8 D3/D4), `05-IDENTITY-HUB-SPEC.md` (§3.4 renew-link, §4.1 webhook events, §5 disable propagation)  
+**Depends on:** `04-CONTROL-PLANE-DESIGN.md` (§1.3 `payments`/`invoices`, §2 state machine, §2.3 scheduler, §2.4 product contract, §5.3 checkout flow, §8 D3/D4), `05-IDENTITY-HUB-SPEC.md` (§3.4 renew-link, §4.1 webhook events, §5 disable propagation), `07-MULTI-TENANCY-DESIGN.md` (§8.1 per-tenant DB + prefix, §11.4 payments impact)  
 **Inputs:** `khattakbits-core/src/{Support/Audit,Support/EmailTemplates,Support/Mailer,Support/Naming,Support/SettingsStore,Support/TableQuery,Http/Controllers/AttachmentController,Models/Attachment,Models/Setting}.php`, `saas-starter/{config/attachments.php,config/queue.php,routes/console.php,app/Modules/Settings/**}`, `khattakbits-ui/src/{ui/FileAttachments.vue,ui/ListView.vue,composables/useServerList.js}`  
 **Rule:** Design + schema snippets only. Koi migration, model, gateway client ya job code nahi likha gaya — sirf interface aur base-class skeleton (jaisa maanga gaya). Har vendor-specific detail **VERIFY IN OFFICIAL DOCS** mark hai.
 
@@ -1318,7 +1318,7 @@ DB::transaction(function () use ($payment, $admin, $reason) {
 
 | Case | Subscription row | `access_mode` | Customer dekhta hai | Kyun |
 |---|---|---|---|---|
-| **Naya purchase**, payment `awaiting_verification` | **Koi row nahi banti** | — | Status page + SLA ("12 ghante") | 04 §5.3 ka sequence: provision **verify ke baad**. Tenant DB/subdomain/OAuth client pehle banana aur reject par rollback karna mehnga hai |
+| **Naya purchase**, payment `awaiting_verification` | **Koi row nahi banti** | — | Status page + SLA ("12 ghante") | 04 §5.3 ka sequence: provision **verify ke baad**. Tenant DB/slug/OAuth client pehle banana aur reject par rollback karna mehnga hai |
 | **Renewal**, pending, period ke andar | `active` (unchanged) | `full` | Kuch nahi — kaam chalta rehta hai | `current_period_end` tak waqt hai; verify hote hi `renewed` |
 | **Renewal**, pending, `grace` mein | `grace` (unchanged) | `read_only` | Renew banner | 04 §2.3 grace already buffer hai |
 | **Renewal**, pending, `expired` | `expired` (unchanged) | `locked` | "Renew" CTA | Verify hote hi `reactivated` |
@@ -1326,7 +1326,7 @@ DB::transaction(function () use ($payment, $admin, $reason) {
 
 **Naya purchase par subscription row kyun nahi banati:** 04 §2.2 ke transitions `∅ → trialing` aur `∅ → active` hain — dono payment/checkout ke baad. Ek teesra `∅ → pending_verification` add karna 04 ki state machine, scheduler (`subscriptions:tick`), `access_mode` contract, aur webhook events — chaaron ko chhuna hota. Iska fayda sirf itna hota ke customer 12 ghante pehle **khali** product dekh leta, jismein uska koi data nahi hota. Cost/fayda ratio kharab hai.
 
-**Provisioning verify ke baad kyun (na ke checkout par):** `POST provision` tenant DB banata hai, subdomain allocate karta hai, `kb_user_product_access` rows likhta hai, OAuth client banata hai. Reject hone par yeh sab undo karna padta — aur DB drop reversible nahi. 04 §5.3 ka sequence (`payment verified -> invoice paid -> subscription active -> registry row (provisioning)`) exactly yeh kehta hai.
+**Provisioning verify ke baad kyun (na ke checkout par):** `POST provision` tenant DB banata hai, slug allocate karta hai (path segment, `07` §3.5 — subdomain nahi), `kb_user_product_access` rows likhta hai, OAuth client banata hai. Reject hone par yeh sab undo karna padta — aur DB drop reversible nahi. 04 §5.3 ka sequence (`payment verified -> invoice paid -> subscription active -> registry row (provisioning)`) exactly yeh kehta hai.
 
 #### 2.8.2 Rejected alternative (aur kyun reject hui)
 
@@ -1334,8 +1334,8 @@ DB::transaction(function () use ($payment, $admin, $reason) {
 
 | Problem | Detail |
 |---|---|
-| **Free ERP for anyone** | Koi bhi fake 11-digit number daal kar 24 ghante ka full access le lega. Har fake attempt = ek tenant DB + subdomain + cleanup job |
-| **Rollback garbage** | 24h baad reject → tenant DB, subdomain, uploaded files, user data — sab orphan. Cleanup job likhna padega jo khud buggy hoga |
+| **Free ERP for anyone** | Koi bhi fake 11-digit number daal kar 24 ghante ka full access le lega. Har fake attempt = ek tenant DB + slug + cleanup job |
+| **Rollback garbage** | 24h baad reject → tenant DB, slug, uploaded files, user data — sab orphan. Cleanup job likhna padega jo khud buggy hoga |
 | **`access_mode` semantics** | Provisional access ka matlab `full` hai magar customer ne pay nahi kiya. Product ko "yeh full hai magar sach mein nahi" batana naye field ka taqaza karta hai (`provisional: true`) — 5 products ko usay handle karna padta |
 | **04 se conflict** | 04 §5.3 ka flow explicit hai: provision verify ke baad. Deviation cross-doc inconsistency banati hai |
 | **Trial already exists** | Jise foran access chahiye uske liye `plan.trial_days > 0` hai. Woh **sanctioned** fast path hai — no payment, no wait, time-boxed, aur expire par normal `grace` flow |
@@ -1437,6 +1437,26 @@ $number = Naming::next('INV-'.now()->format('Y'));   // → INV-2026-00001
 
 `invoices.number string(30)` mein fit ho jata hai (`INV-2026-00001` = 14 chars). Naya saal = naya prefix = naya counter automatically. `document_sequences` ki row `INV-2026` apne aap ban jati hai (`insertOrIgnore`). Koi `reset` policy likhne ki zaroorat nahi.
 
+**`Naming::next()` tenant connection par chalna lazmi hai (`07` §8.1, §11.4).** `document_sequences`
+**tenant DB** ki table hai — har tenant ka apna `INV-2026-00001`. `Naming::next()` ka `lockForUpdate()`
+usi connection par lagega jis par `DocumentSequence` model khara hai. Path-based tenancy mein
+`database.default` **`tenant`** par switch ho jata hai (`07` §1.5 O1 bootstrapper), is liye numbering
+apne aap tenant DB par chalti hai — **magar sirf tab jab model central par pinned na ho.**
+
+**Do traps, dono silent:**
+
+1. **`DocumentSequence` par `$connection = 'central'` set karna.** `07` §2.3.1 kehta hai `Role`/
+   `Permission` ko `$connection = 'tenant'` chahiye — ulta galti karke agar `DocumentSequence` ko
+   `central` pin kar diya, to **saare tenants ek hi counter share karenge**: tenant A ko
+   `INV-2026-00047` milega jabke uske apne sirf 46 invoices hain. Koi error nahi aayega, sequence unique
+   bhi rahegi — sirf audit mein pakra jayega, us waqt jab numbers cross-tenant leak kar chuke honge.
+   **Test:** `07` §10.5 ka T-matrix — do tenants mein invoice banao, dono ka number `...00001` hona chahiye.
+2. **Queued job se number assign karna.** Invoice PDF job `queue.connections.database.connection =
+   central` par pinned hai (`07` §2.4), is liye job ke andar tenancy initialized **nahi** hoti.
+   Wahan `Naming::next()` chalane se woh central DB par (ya `no database selected` par) jayega.
+   **Rule:** number sirf **web request** mein assign ho, jahan tenancy initialized ho — aur woh bhi
+   checkout par hi (§2.9.2), job mein nahi.
+
 **Yeh fiscal-year numbering ke liye bhi kaafi hai.** Agar fiscal year chahiye (calendar year nahi), to prefix mein fiscal year daal dein:
 
 ```php
@@ -1515,6 +1535,35 @@ Do raste:
 **A kyun:** invoice link se "invoice dobara bhejo" ka support ticket khatam hota hai — customer khud download kar leta hai. Attachment ek dafa ka hota hai aur inbox mein gum ho jata hai.
 
 **Link 30 din ka nahi, 7 din ka (v2 mein badla).** `APP_KEY` rotation har signed URL ko invalid kar deta hai (§5.2.1) — 30 din ke link ka matlab hai ke ek rotation ke baad ek mahine ke saare invoice emails dead ho jate hain. 7 din woh window chhota kar deta hai, aur customer jo invoice 7 din baad maangega woh "resend invoice" button (ya platform se download) use karega — jo account ke andar hamesha available hai. `payments.invoice.link_days` config se.
+
+**Path-based tenancy ka asar — signed URL ka tenant param (`07` §11.4).** Aaj link
+`https://app.khattakbits.com/...` hai: CP ek **single central app** hai (`admin_core`, `04` §0), is liye
+is route mein `{tenant}` param **nahi** hai aur `URL::temporarySignedRoute('invoice.pdf', ..., ['invoice'
+=> $id])` bilkul theek chalta hai. **Magar signature poore URL string par hoti hai**, is liye do baatein
+abhi likh lein taake baad mein migration na karni pare:
+
+1. **Tenant param kabhi `URL::defaults` se na aaye.** `07` §1.3 ka `URL::defaults(['tenant' => ...])`
+   sirf **request ke andar** kaam karta hai. Invoice link **email se click** hota hai — us waqt tenancy
+   initialized hi nahi hoti, is liye default ka koi wujood nahi. Aur agar sign karte waqt default `acme`
+   tha aur click ke waqt `beta`, to generated URL badal jayega aur signature **fail** ho jayega — user ko
+   "invalid link" milega, wajah bina.
+2. **Jab route mein `{tenant}` aa jaye** (`/{tenant}/invoices/{id}`, `07` §3.4 ka split), to tenant
+   param **explicitly** dena hoga — `tenant_url()` helper se (`07` §5.2), taake URL generation ek hi
+   jagah rahe.
+
+```php
+// Aaj — CP central, koi {tenant} param nahi
+$url = URL::temporarySignedRoute('invoice.pdf', now()->addDays($days), ['invoice' => $invoice->id]);
+
+// Jab route mein {tenant} aaye — tenant param EXPLICIT, default se nahi
+$url = URL::temporarySignedRoute('invoice.pdf', now()->addDays($days), [
+    'tenant'  => $invoice->tenant->slug,   // NEVER URL::defaults
+    'invoice' => $invoice->id,
+]);
+```
+
+**Yeh Phase 1 mein code change nahi maangta** — sirf rule hai. Magar agar invoice link kabhi product
+(multi-tenant app) se serve hone lage, to yeh rule hi decide karega ke link chalta hai ya nahi.
 
 ### 2.10 Email templates (4 naye keys)
 
@@ -2121,7 +2170,7 @@ sequenceDiagram
 | Detail | Faisla |
 |---|---|
 | **`return_url` kahan store hoti hai** | `invoices.checkout_return_url string(190) nullable` — naya column. 04 mein nahi tha. Wajah: status page ko "Return to app" button ke liye woh URL chahiye, aur usay **request se** nahi lena (open redirect) — usi waqt validate kar ke store karo jab `renew-link` call hui |
-| **`return_url` validation** | 05 §3.4: host `tenants_registry.subdomain` ya `products.domain` ke against **exact match**. Free-form nahi. Wohi rule yahan bhi, `invoices` mein store karne se **pehle** |
+| **`return_url` validation** | 05 §3.4 (v3): **host** = `products.domain`, exact, https only — path-based mein tenant ka apna host nahi (`07` §1.2). **Path** = `/{tenant_slug}/...` aur slug usi tenant ka jo `tenant_id` mein aaya. Free-form nahi. Wohi rule yahan bhi, `invoices` mein store karne se **pehle** |
 | **Token (`?t=`) expiry 30 min, single use** | Token sirf **checkout kholne** ke liye hai. Submit ke baad token ki zaroorat nahi — status page invoice number se chalta hai. Yani user 2 ghante baad bhi wapas aa sakta hai |
 | **Product ko verification kaise pata chale** | **Teen channels, sab chahiye:** (1) `subscription.renewed` webhook (primary), (2) `resolve` poll 5 min TTL (fallback), (3) `GET /api/v1/users/changes` feed (identity changes, 05 §3.5). Sirf webhook par bharosa nahi — woh miss ho sakta hai |
 | **Customer ne tab band kar diya** | Email `payment_approved` mein "Open product" link hai. Product app khud `resolve` par naya `access_mode` dekh lega (5 min TTL). Koi data loss nahi |
@@ -2159,7 +2208,7 @@ sequenceDiagram
 | Gateway password / integrity salt / API secret | `payment_gateway_accounts.credentials` JSON | **`encrypted:array` cast** (Laravel native, `APP_KEY` par) | Admin UI, bina deploy. Purana secret 24h tak accept (§3.3 rule 5) |
 | Webhook signing secret (outbound, 04 §1.3) | `webhook_endpoints.secret` | `encrypted` cast (already documented in 04) | Rotate + 24h dual-sign |
 | Merchant wallet number (public) | `settings` table | **Plaintext — sahi hai** | Admin UI |
-| `APP_KEY` | `.env` + **offline copy** (password manager, 2 log) | — | **Rotation procedure §5.2.1** — `APP_PREVIOUS_KEYS` already wired; rotation signed URLs bhi invalid karta hai |
+| `APP_KEY` | `.env` + **offline copy** (password manager, 2 log) | — | **Rotation procedure §5.2.1** — `APP_PREVIOUS_KEYS` already wired; rotation signed URLs bhi invalid karta hai. **`07` §11.4:** Phase 2 mein per-tenant DB passwords (`tenants.data`) bhi isi key ke neeche — blast radius barhta hai (§5.2.1) |
 | HMAC secrets for renew-link tokens | `APP_KEY`-derived (`URL::signedRoute`) | — | `APP_KEY` ke saath — **is liye rotation se in-flight tokens invalid ho jate hain** (§5.2.1) |
 
 **Teen rules:**
@@ -2180,6 +2229,39 @@ sequenceDiagram
 |---|---|---|
 | **`APP_KEY` kho gaya** (server rebuild, `.env` overwrite, deploy script bug) | Encrypted columns **permanently unreadable**. Gateway credentials, webhook secrets, email passwords — sab gayab | **Offline backup** — ek copy aisi jagah jo server ke saath na mare |
 | **`APP_KEY` leak ho gaya** (repo mein commit, log mein, backup bucket) | Sab encrypted values decrypt ho sakte hain | **Rotation** — naya key + re-encrypt + purana key retire |
+
+##### Blast radius — path-based tenancy ne isay barha diya (`07` §11.4)
+
+Aaj `APP_KEY` ke neeche sirf **platform ke apne** secrets hain. Phase 2 mein `tenants.data` (stancl ka JSON
+column) mein **per-tenant MySQL credentials** aayenge (`07` §8.1) — aur woh bhi `encrypted` cast se, yani
+usi key ke neeche:
+
+| Kya `APP_KEY` ke neeche hai | Key kho jaye to kitne tenants par asar |
+|---|---|
+| `payment_gateway_accounts.credentials` (aaj) | 1 — platform ka apna |
+| `webhook_endpoints.secret`, `EmailAccount.password` (aaj) | 1 |
+| **Per-tenant DB password — `tenants.data` (Phase 2)** | **Har tenant** — 12 tenants = 12 databases jo app parh hi nahi sakta |
+
+**Aur yeh DB restore se theek nahi hota.** Backup se `tenants` table wapas aa jayegi, magar passwords decrypt
+nahi honge, is liye har tenant DB ka password `ALTER USER` se **manually** reset karna parega — ek ek karke,
+har ek ke saath us tenant ka downtime. `07` §10.4 ka `tenants:destroy`/`provision` ismein madad nahi karta:
+woh naya tenant banata hai, purana theek nahi.
+
+**Is liye Phase 2 se pehle teen cheezein — magar backup rule aaj se lagoo:**
+
+1. **Verify cadence 6 mahine se 3 mahine.** Ab ek key failure ka blast radius "gateway dobara configure karo"
+   se "poora product down, 12 tenants" ho jayega. Quarterly decrypt test minimum hai, aur uski record
+   (`security_events` mein `app_key.verified`) rakhein — warna "verify kiya tha" ka koi saboot nahi hoga.
+2. **Re-encrypt command ek hi ho.** `payments:reencrypt-secrets` ko `--include=tenants` ke saath chalao, ya
+   `tenants:reencrypt-data` banao jo dono kare. Do alag commands ka matlab hai ke rotation ke baad **aadha**
+   system chalega aur aadha nahi — aur woh failure sab se mehnga hai kyunke woh **partial** hai: kuch tenants
+   theek, kuch 500.
+3. **Order: pehle `tenants`, phir payments.** Tenant DB password na hone se **poora product** down hai; gateway
+   credential na hone se sirf **naya payment** rukta hai (purane invoices, read-only access, aur `resolve` sab
+   chalte rehte hain). Is liye tenants pehle re-encrypt karein.
+
+**Yeh Phase 2 ka kaam hai — magar backup rule aaj lagoo karein.** Phase 2 mein `APP_KEY` ka backup upgrade
+karna ek aisa kaam hai jo kabhi nahi hota, aur uska failure mode irreversible hai.
 
 ##### Offline backup — kya, kahan, kaun
 
@@ -2261,7 +2343,7 @@ php artisan config:clear && php artisan config:cache
 | Cheez | Asar |
 |---|---|
 | `renew-link` tokens (`?t=`, 05 §3.4) | **Invalid** — 30 min ke hote hain, is liye asar chhota |
-| Invoice signed download links (§2.9.4, 30 din) | **Invalid** — customer ke purane email ke link toot jayenge |
+| Invoice signed download links (§2.9.4, **7 din**) | **Invalid** — customer ke purane email ke link toot jayenge |
 | Password reset links | **Invalid** — user dobara request karega |
 | Session cookies | **Invalid** — sab logout ho jayenge (`SESSION_ENCRYPT=true` hai) |
 
@@ -2551,6 +2633,26 @@ Har reject ko ek **class** milti hai jo tay karti hai ke `reference_norm` locked
 | 6 | 4 stray empty-table artifacts hataye; T-numbering header fix (Phase 1 = T1–T40 + T50–T56, Phase 2 = T41–T49); effort 19d → **21.5d** | poora doc, §5.5, §6.1, §6.3 | Doc hygiene + naye kaam ka effort reflect ho |
 
 **Kul asar:** ek design-level dead-end band (rejected payment ka permanent lock), ek operational gap band (admin ko pata nahi chalta), ek irreversibility risk documented (APP_KEY), aur tax/legal claims ko NOT VERIFIED + configurable banaya. Effort +3.5d (§6.1). Tests T1–T56.
+
+---
+
+### 13 Nov 2026 — path-based tenancy sync with `07` (v3)
+
+`07-MULTI-TENANCY-DESIGN.md` ne tenancy ko **path-based** kar diya (`mizaanbitserp.com/{tenant_slug}/...`) aur
+`02` ke D3/D4 supersede kar diye. Payments ka **schema, state machine, aur gateway logic** isse bilkul nahi
+badla — sirf teen jagah asar hai: numbering ka connection, invoice link ka URL, aur `APP_KEY` ka blast radius.
+
+| # | Kya badla | Kahan | Kyun |
+|---|---|---|---|
+| 1 | **`Naming::next()` tenant connection par** — confirmation + do silent traps (`$connection = 'central'` pin karna; queued job se number assign karna) | §2.9.1 | `document_sequences` **tenant DB** ki table hai, is liye har tenant ka apna `INV-2026-00001`. Path-based mein `database.default` `tenant` par switch hota hai (`07` §1.5 O1), is liye yeh apne aap sahi chalta hai — **magar** agar model par `$connection = 'central'` pin ho jaye (jaise `Role`/`Permission` ke liye zaroori tha) to **saare tenants ek hi counter** share karenge. Koi error nahi, sequence unique bhi rahegi — sirf audit mein pakra jayega |
+| 2 | **Invoice signed link ka tenant param** — `URL::defaults` par bharosa na karna, tenant param explicitly dena, `tenant_url()` helper | §2.9.4 | Signature **poore URL string** par hoti hai. Agar sign karte waqt default `acme` tha aur click ke waqt `beta`, signature fail. Aur invoice link **email se click** hota hai — us waqt tenancy initialized hi nahi hoti, is liye `URL::defaults` ka wahan koi wujood nahi |
+| 3 | **`APP_KEY` blast radius** — naya sub-section; Phase 2 ke per-tenant DB passwords (`tenants.data`); verify cadence 6 → 3 mahine; re-encrypt ek hi command; order tenants-first | **§5.2.1** (naya sub-section), §5.2 table | `07` §8.1/§11.4: per-tenant DB passwords bhi `APP_KEY` ke neeche aayenge. Key kho gaya to **har tenant** ka DB unreadable — aur DB restore isay theek nahi karta (`ALTER USER` manually, per-tenant downtime). Aaj ka "6 mahine verify" rule us blast radius ke liye kaafi nahi |
+| 4 | Rotation impact table: invoice link "**30 din**" → "**7 din**" | §5.2.1 | v2 ne link 30 → 7 din kiya (§2.9.4) magar yeh table update nahi hui thi — doc ke andar hi inconsistency thi |
+
+**Kya nahi badla:** `payments`/`invoices` schema, `reference_norm` + `unique(gateway, reference_norm)`,
+`partially_refunded`, reject ki do classes (D11), state machine, scheduler, admin queue, webhook events,
+`access_mode` contract, aur A1–A5 (sab NOT VERIFIED hi hain). **Effort mein koi change nahi** — teenon items
+design-level confirmations hain; asli kaam `07` ke effort mein hai (§12 items 8–10).
 
 ---
 
