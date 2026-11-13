@@ -20,7 +20,7 @@
 | `GET /api/v1/users/tenants`                                                              | ❌ **NEW** — CP endpoint                                | `05` §3.1.1                                 |
 | `tenant.owner` in `resolve` / `subscription.created`                                     | ❌ **NEW** — CP payload                                 | `05` §3.2, §4.1                             |
 | `users.kb_user_id`, `users.blocked_at`, `users.token_version`, `users.password` nullable | ❌ **NEW** — asli ghar `core` (`v1.5.0`); `sso-client` mein transitional shim | `05` §5.1.1, `07` §2.1, §6.3 |
-| `GET /api/v1/plans`                                                                      | ❌ **NEW** — CP endpoint, contract `§6.1` mein likha hai | `05` §1.2 (add karna hai) |
+| `GET /api/v1/plans`                                                                      | ❌ **NEW** — CP endpoint; contract **`05` §3.1.2** (canonical), example `§6.1` | `05` §3.1.2 |
 
 **Yeh doc do cheezein nahi karta:** (a) CP ka implementation (woh `04`/`05` ka kaam hai), (b) product ka poora ERP (sirf integration surface). Jo code hai woh **copy-paste-able reference** hai — magar `NOT VERIFIED` wale hisse (jaise CP ka exact JSON) CP ship hone par confirm karne honge.
 
@@ -2963,6 +2963,8 @@ final class SubscriptionGuard
 
 **`read_only` mein `GET` allowed hai — magar `GET` par mutation mat karein.** Guard method dekhta hai, intent nahi. `GET /invoices/{id}/send-email`, `GET /reports/export`, ya koi bhi "link se action" route read-only grace mein **chal jayega**. Yeh guard ka bug nahi — route design ka. Rule: **state badalne wala kuch bhi `POST`/`PUT`/`PATCH`/`DELETE` ho.** Agar aisa `GET` route pehle se hai, usay grace mein `402` chahiye to `$allowedWhenLocked` ki tarah ek explicit denylist nahi — route ko `POST` mein badalna asli fix hai.
 
+**Yeh rule ab enforced hai, umeed nahi:** `05` §7.1 ka **CI gate** (`GetRoutesAreReadOnlyTest`) har `GET` route hit karta hai aur `DB::listen` se koi bhi write query pakar kar test fail kar deta hai, saath mein `Queue::fake()` se side-effect job dispatch. Iske baghair naya module `GET /invoices/{id}/send` add kar ke `read_only` ko **khamoshi se** bypass kar sakta hai — guard mein koi tabdeeli kiye baghair. Gate product app mein rehta hai, `sso-client` mein nahi, kyunke routes product ke hain.
+
 **`GET` allowed par `POST` blocked — `isReadOnly` method-list se, route-name se nahi.** Route names badalte rehte hain; HTTP method semantics stable hain.
 
 
@@ -4052,7 +4054,7 @@ final class BillingController
 }
 ```
 
-**`plansForUi()` ka contract `§6.1` mein hai** — `GET /api/v1/plans` `05` §1.2 mein **abhi nahi** hai, is liye `KbApiClient::plans()` bhi NEW hai. Endpoint ship hone tak yeh `[]` return karega (catch branch) aur renew current plan par chalega — MVP block nahi hota, sirf upgrade UI nahi dikhti.
+**`plansForUi()` ka canonical contract `05` §3.1.2 mein hai** (v4, 14 Nov 2026); `§6.1` uska example copy hai. `KbApiClient::plans()` **NEW** hai — CP endpoint ship hone tak woh `null` dega, `plansForUi()` `[]` dikhayega, aur renew `plan_key = null` par current plan par chalta rahega. Yani MVP block nahi hota, sirf upgrade UI nahi dikhti.
 
 #### 2.15.3 Inertia pages
 
@@ -5434,10 +5436,13 @@ final class CallbackMembershipTest extends TestCase
 |---|---|---|
 | **v1** | 13 Nov 2026 | Initial. Registration walkthrough (8 steps, 3 plans × 14 entitlements), `khattakbits/sso-client` (folder structure, composer, provider, config, 5 migrations, OAuth+PKCE, mirror/owner mapping, API client, resolve ladder, guard, entitlements, webhook, billing pages, token refresh, feed poll), E2E runbook + T1–T20, troubleshooting (5 named + 14 more), 13 din |
 | **v2** | 14 Nov 2026 | **Login CSRF fix** — `StateStore::pull()` ab `session_id` ko current session se compare karta hai; `CallbackController` ka misleading comment theek; T22/T23 + `asBrowser()` test helper. **`return_to` provenance fix** — `callback()` `$stored->return_to` DTO mein daalta hai, controller `$request->query('return_to')` **nahi** padhta; T21 + §3.4 steps 1/4. **Teen open gaps band** — `GET /api/v1/plans` contract (§6.1), `tenant.provisioned` **retired** (§6.2), `users.password` nullable → `core` (§6.3). Effort 13.0 → 13.5 |
+| **v3** | 14 Nov 2026 | **`05` v4 ke saath sync.** `05` §3.1.2 ab `GET /api/v1/plans` ka **canonical** contract hai — `§6.1` par banner lagaya ("pehle `05` mein badlein, phir mirror karein"). `§6.2`/`§6.3` ke decisions ab `05` §4.1/§5.1.1 mein reflected hain, is liye woh paragraphs update kiye. **`§2.12` mein CI gate ka pointer** (`05` §7.1 — `GetRoutesAreReadOnlyTest`) — "GET par mutation na karein" ab enforced hai. Stale claims theek: `plansForUi()` ka "05 §1.2 mein abhi nahi", status matrix ka plans row. **Drift pakda:** `05` ka migration sketch `blocked_reason string(190)` kehta tha jabke `§2.6` `string(120)` hai — `05` ko `120` par fix kiya |
 
-### 6.1 `GET /api/v1/plans` — contract (05 §1.2 mein add karna hai)
+### 6.1 `GET /api/v1/plans` — contract
 
-**Status: `05` is turn mein edit NAHI kiya.** Yeh block woh text hai jo `05` §1.2 mein jayega; tab tak `08` authoritative hai. `§2.15.2` ka `plansForUi()` isi ko consume karega.
+> **Canonical copy ab `05` §3.1.2 mein hai (v4, 14 Nov 2026).** Yeh section **reference** hai — example product ke saath concrete data dikhane ke liye. **Koi bhi tabdeeli pehle `05` §3.1.2 mein karein, phir yahan mirror karein.** Dono jagah alag alag edit karna drift hai.
+
+**Status: `05` ab updated hai** — §3.1.2 mein poora contract, §1.2 endpoints table, §3.1 auth matrix, §3.8 rate limit (60/min), aur tests T48–T53. Neeche wohi contract hai `08` ke example product ke saath.
 
 ```
 GET /api/v1/plans?product_key=mizaan&include_hidden=false
@@ -5571,7 +5576,7 @@ Accept: application/vnd.kb.v1+json
 | Product ko CP se provisioning event chahiye? | **Nahi.** Tenant row `tenants:provision` command se banti hai (`07` §6.6.2), owner mapping `subscription.created` se (`07` §6.6.1) |
 | Handler rakhein? | **Nahi.** `§2.14.6` retired; `§2.2` tree, `§1.8` event list, `§2.14.2` dispatcher — teenon se hata diya |
 
-**`05` §4.1 se bhi hatana hai** — is turn mein `05` edit nahi kiya. Jab tak woh update na ho, `08` ka event list (`§1.8`) authoritative hai. `05` update karte waqt yeh bhi check karein ke `data.owner_user_id` ka zikr kahin aur na bache.
+**`05` §4.1 se hata diya gaya hai** (14 Nov 2026, `05` v4). Woh event table ab match karta hai, aur `05` §4.1 mein retirement rationale + recovery table + `webhook_endpoints.events` cleanup note bhi hai. **Ek baat baaki:** agar kisi maujooda endpoint ki saved `events` list mein `tenant.provisioned` hai to woh entry invalid hai — `04` §6.1 ke validator ko retired names ki denylist rakhni hogi, warna endpoint save par `422` aayega.
 
 **Kya khoya:** ek "recovery" path jo asal mein recovery nahi thi — `map()` idempotent hai, magar usay trigger karne ka koi consumer nahi tha. Asli recovery `tenants:provision` re-run hai (`§2.14.6` ka table).
 
@@ -5588,7 +5593,7 @@ Accept: application/vnd.kb.v1+json
 
 **Shim kaise pehchana jayega:** `§2.6` ki migration mein `⚠️ TRANSITIONAL SHIM` comment hai aur `§6.3` ka reference. `change()` idempotent hai, is liye core ke baad bhi chalne par kuch nahi tootta — magar code review mein yeh block hatna chahiye. **Ek faisla, ek jagah** — yeh `07` §2.4 ki "connection pinning" wali soch ka wohi asool hai.
 
-**`05` §5.1.1 mein confirm karna hai** ke `v1.5.0` mein yeh char columns hain: `kb_user_id`, `blocked_at`, `blocked_reason`, `token_version`, aur `password` nullable. `blocked_reason` `05` §5.1.1 mein listed nahi tha magar `§2.6`/`§2.9.1` usay use karte hain — yeh `05` update karte waqt add karein.
+**`05` §5.1.1 mein ab confirm ho chuka hai** (14 Nov 2026, `05` v4) — `blocked_reason` wahan column contract table mein hai, `string(120)` par, aur feed + `user.disabled` dono payloads mein hai. **Ek drift jo `05` pass mein pakda gaya:** `05` ka migration sketch `blocked_reason string(190)` kehta tha jabke `§2.6` `string(120)` hai — `05` ko `120` par correct kiya. Agar aap `§2.6` badlein to `05` §5.1.1 bhi badalna hoga, warna `Data too long` ya silent truncation.
 
 ---
 
@@ -5641,4 +5646,4 @@ Teenon sections authorization ke lehaz se dobara padhe gaye. **Findings neeche, 
 
 ---
 
-*Yeh document design + reference implementation hai. `NOT VERIFIED`: CP ke actual JSON payloads (`users/tenants`, `resolve` ka `tenant.owner`, `subscription.created` ka `tenant.owner`) — teenon CP ship hone par confirm karne hain; `khattakbits/core` v1.5.0 ke `kb_user_id`/`blocked_at`/`blocked_reason`/`token_version` columns aur `password` nullable (agar woh pehle aa gaye to `§2.6` ki migration ka `hasColumn()` guard unhein skip kar dega). `GET /api/v1/plans` ka contract `§6.1` mein hai magar `05` mein **abhi add nahi hua**. `tenant.provisioned` **retired** — `05` §4.1 se hatana baaki hai.*
+*Yeh document design + reference implementation hai. `NOT VERIFIED`: CP ke actual JSON payloads (`users/tenants`, `resolve` ka `tenant.owner`, `subscription.created` ka `tenant.owner`) — teenon CP ship hone par confirm karne hain; `khattakbits/core` v1.5.0 ke `kb_user_id`/`blocked_at`/`blocked_reason`/`token_version` columns aur `password` nullable (agar woh pehle aa gaye to `§2.6` ki migration ka `hasColumn()` guard unhein skip kar dega). `GET /api/v1/plans` ka **canonical** contract `05` §3.1.2 mein hai (v4), `§6.1` sirf reference copy hai. `tenant.provisioned` **retired** aur `05` §4.1 se hata diya gaya (v4).*

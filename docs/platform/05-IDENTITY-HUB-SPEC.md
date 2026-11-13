@@ -1,8 +1,8 @@
 # 05 — Identity Hub Spec (OAuth2/OIDC, login interrupt, API contract, disable propagation)
 
-**Date:** 13 Nov 2026 · **Revised:** 13 Nov 2026 (**v3** — path-based tenancy sync with `07`: fixed callback URI, no wildcard host allowlist, naya `GET /api/v1/users/tenants`, `tenant.owner` in `resolve`/`subscription.created`; changelog §10)  
+**Date:** 13 Nov 2026 · **Revised:** 14 Nov 2026 (**v4** — `GET /api/v1/plans` contract, `tenant.provisioned` retired, `blocked_reason`/`blocked_at` in feed + `user.disabled`, CI gate for GET-route writes; v3 ne path-based tenancy sync kiya tha; changelog §10)  
 **Repo:** `E:/LaraProjects/saas-starter` (branch `extract/package-skeleton`)  
-**Depends on:** `docs/platform/04-CONTROL-PLANE-DESIGN.md` (§1.3 tables, §3.3 snapshot, §2.4 product contract), `docs/platform/02-ARCHITECTURE-DECISIONS.md` (§0 D1–D5, §5), `docs/platform/07-MULTI-TENANCY-DESIGN.md` (§3.6 SSO flow, §3.6.1 membership source of truth, §3.7 session model) — `02` §5.4.1 ka handoff **13 Nov 2026 ko retire** ho gaya (path-based tenancy)  
+**Depends on:** `docs/platform/04-CONTROL-PLANE-DESIGN.md` (§1.3 tables, §3.3 snapshot, §2.4 product contract), `docs/platform/02-ARCHITECTURE-DECISIONS.md` (§0 D1–D5, §5), `docs/platform/07-MULTI-TENANCY-DESIGN.md` (§3.6 SSO flow, §3.6.1 membership source of truth, §3.7 session model), `docs/platform/08-EXAMPLE-PRODUCT-INTEGRATION.md` (§6.1 `plans` contract ka source, §6.2 `tenant.provisioned` retirement, §2.12 `read_only` + CI gate) — `02` §5.4.1 ka handoff **13 Nov 2026 ko retire** ho gaya (path-based tenancy)  
 **Inputs:** `khattakbits-core/src/Http/Controllers/AuthController.php`, `khattakbits-core/src/Http/Middleware/EnsureUserActive.php`, `khattakbits-ui/src/login3d/submitLogin.js`, `resources/js/Pages/Auth/Login.vue`, `config/auth.php`, `config/session.php`, `composer.json`, `.env`  
 **Rule:** Design only. Koi migration, model ya controller nahi likha gaya.
 
@@ -189,6 +189,7 @@ Yeh split jaan boojh kar hai: Passport ka core (auth code, PKCE verify, token st
 | GET    | `/api/v1/subscriptions/resolve`     | bearer (client or user)       | Snapshot                                                    |
 | GET    | `/api/v1/entitlements`              | user bearer                   | Snapshot, tenant token se                                   |
 | GET    | `/api/v1/users/tenants`             | user bearer                   | Caller ke tenants — `kb_user_tenant` ka **authoritative source** (§3.1.1) |
+| GET    | `/api/v1/plans`                     | user bearer **ya** client creds | Plan catalog — **list only**, product ke upgrade/renew UI ke liye (§3.1.2) |
 | POST   | `/api/v1/subscriptions/renew-link`  | bearer                        | Checkout URL                                                |
 
 `/oauth/token`, `/oauth/authorize`, `/oauth/revoke` **Passport ke hain** — CP unhein override nahi karta. `02` §1.1 ki ghalti yahi thi ke woh inhein product ke andar dikha raha tha.
@@ -629,6 +630,7 @@ Base: `https://app.khattakbits.com`. Version URL path mein (`/api/v1/`), payload
 | `GET /api/v1/entitlements` | ✅ | ✅ | User path `X-KB-Tenant` lazmi |
 | `GET /api/v1/users/changes` | ✅ **sirf** | ❌ | Product-level feed — ek user ka nahi |
 | `GET /api/v1/users/tenants` | ❌ | ✅ **sirf** | User ke tenants — `kb_user_tenant` ka source (§3.1.1) |
+| `GET /api/v1/plans` | ✅ | ✅ | **List only.** `is_public=false` plans sirf first-party client + `include_hidden=true` par (§3.1.2) |
 | `POST /api/v1/subscriptions/renew-link` | ✅ | ✅ | Client path `tenant_id` body mein |
 | `POST /oauth/introspect` | ✅ **sirf** | ❌ | RFC 7662 |
 | `POST /oauth/revoke` | ✅ **sirf** | ❌ | RFC 7009 |
@@ -691,6 +693,150 @@ nahi deta.
 hua. "CP down hai to sab kuch allow" ghalat hai; "CP down hai to kuch bhi **naya** na banao" sahi hai
 (`07` §3.8).
 
+### 3.1.2 `GET /api/v1/plans` — plan catalog (list only)
+
+Yeh endpoint **14 Nov 2026 ko add hua** (v4; contract `08` §6.1 se). Wajah: product ke `Billing/Expired` aur `Billing/Return`
+pages par upgrade options dikhane ke liye plan list chahiye, aur uske paas koi source nahi tha — `08` §2.15.2 ka
+`plansForUi()` khali array return kar raha tha.
+
+```
+GET /api/v1/plans?product_key=mizaan&include_hidden=false
+Authorization: Bearer <token>
+Accept: application/vnd.kb.v1+json
+```
+
+**Auth:** do caller allowed hain — (a) user access token (product apne user ki taraf se poochta hai), (b)
+`client_credentials` token. Anonymous **nahi**.
+
+**Query:**
+
+| Param | Type | Default | Rule |
+|---|---|---|---|
+| `product_key` | string, 60 | client ka bound product | Agar diya aur client ke product se match na kare → **403 `product_scope_mismatch`** |
+| `include_hidden` | bool | `false` | `is_public = false` plans sirf `true` par. Aur **sirf** first-party client (`is_first_party = true`) — warna **403** |
+| `currency` | string, 3 | product ka default | `PKR` |
+
+**200 response:**
+
+```json
+// GET /api/v1/plans?product_key=mizaan
+{
+  "schema": 1,
+  "product_key": "mizaan",
+  "currency": "PKR",
+  "data": [
+    {
+      "key": "starter",
+      "name": "Starter",
+      "tier": 1,
+      "is_public": true,
+      "description": "For a single accountant",
+      "trial_days": 14,
+      "prices": [
+        { "interval": "month", "amount_minor": 350000 },
+        { "interval": "year",  "amount_minor": 3500000 }
+      ],
+      "entitlements": {
+        "flags": {
+          "module.accounting": true,
+          "module.reports": true,
+          "module.inventory": false,
+          "module.payroll": false,
+          "accounting.invoices": true,
+          "accounting.periods": true,
+          "accounting.multi_currency": false,
+          "inventory.warehouses": false,
+          "reports.advanced": false,
+          "audit_export": false,
+          "custom_domain": false
+        },
+        "limits": { "seats": 3 },
+        "quotas": { "storage_mb": 5120, "api.calls": 100000 },
+        "modules": {
+          "accounting": "core",
+          "reports": "core",
+          "inventory": "optional",
+          "payroll": "optional"
+        }
+      },
+      "updated_at": "2026-11-10T09:12:00Z"
+    },
+    {
+      "key": "business",
+      "name": "Business",
+      "tier": 2,
+      "is_public": true,
+      "description": "For a growing team",
+      "trial_days": 14,
+      "prices": [
+        { "interval": "month", "amount_minor": 950000 },
+        { "interval": "year",  "amount_minor": 9500000 }
+      ],
+      "entitlements": {
+        "flags": {
+          "module.accounting": true,
+          "module.reports": true,
+          "module.inventory": true,
+          "module.payroll": false,
+          "accounting.invoices": true,
+          "accounting.periods": true,
+          "accounting.multi_currency": true,
+          "inventory.warehouses": true,
+          "reports.advanced": true,
+          "audit_export": false,
+          "custom_domain": false
+        },
+        "limits": { "seats": 15 },
+        "quotas": { "storage_mb": 51200, "api.calls": 1000000 },
+        "modules": {
+          "accounting": "core",
+          "reports": "core",
+          "inventory": "optional",
+          "payroll": "optional"
+        }
+      },
+      "updated_at": "2026-11-10T09:12:00Z"
+    }
+  ],
+  "etag": "W/\"b93e1f7c\""
+}
+```
+
+`enterprise` upar **nahi** hai kyunke uska `is_public = false` hai (`08` §1.6). `include_hidden=true` + first-party
+client par woh bhi aayega.
+
+**Rules:**
+
+| # | Rule | Kyun |
+|---|---|---|
+| 1 | **List only.** Koi `POST`/`PATCH`/`DELETE` nahi — plan create/edit CP ke admin UI se hota hai, API se nahi | Yeh read contract hai; write path ka audit/admin surface alag hai |
+| 2 | `-1` limits mein **unlimited** hai, exactly `resolve` ki tarah. `null` **nahi** | Do endpoint, ek hi encoding — warna `Entitlement::limit()` do jagah do tarah handle karega |
+| 3 | `limits`/`quotas` **hamesha** maujood, kabhi `null` nahi. Khali object `{}` valid hai | Client ko `??` chains se bachao |
+| 4 | `entitlements` **plan ka template** hai, tenant ka live state **nahi** | Live state `resolve`/snapshot se aata hai. In dono ko mix karna `08` §2.11 ka fail-closed ladder tor dega |
+| 5 | `deprecated_at` (nullable ISO-8601) — plan retire ho raha hai magar maujooda subscribers par hai | Product UI "yeh plan band ho raha hai" dikha sake, aur renew-link usay reject kar sake |
+| 6 | **Khali list ≠ 404.** `200 {"data":[]}` ka matlab "is product ke koi plan nahi" | `404` ka matlab product nahi mila — do alag cheezein |
+| 7 | `ETag` + `Cache-Control: max-age=300, private`. `If-None-Match` → **304** | Plans din mein shayad ek dafa badalte hain; product har page load par na poochhe |
+| 8 | `plan_key` renew-link mein (`§3.4`) isi list ka key hona chahiye, warna **422 `plan_not_available`** | Warna product ek aisa plan bech sakta hai jo CP ne retire kar diya |
+| 9 | `is_public = false` plan ka `key` **guessing** se bhi na mile — `include_hidden` ke baghair woh response mein nahi | Enterprise pricing confidential hoti hai |
+
+**`is_first_party` kyun lazmi hai `include_hidden` ke liye:** `04` §1.3 ka `product_oauth_clients.is_first_party`
+CP ke apne clients ke liye `true` hai (consent skip, `§1.10`). Ek third-party integration jo `include_hidden=true`
+bheje, usay Enterprise pricing dikh jayegi — jo product ki apni commercial information hai, CP ki nahi. Yani
+`include_hidden` **client-level** trust par hai, token-level par nahi. `403 hidden_plans_not_allowed` return karein,
+aur `include_hidden=false` par chup chaap degrade **na** karein — warna client ko pata hi nahi chalega ke usay
+kuch nahi mila.
+
+**`entitlements` `plan_entitlements` se aata hai, `plan_entitlements_history` se nahi** (`04` §3.4). Product ko
+**abhi** ka plan template chahiye, kisi bhi purana nahi. Yeh `resolve` ke `entitlements` se **alag** cheez hai:
+`resolve` tenant ka **live frozen** set deta hai (jo `version` se guard hota hai), yeh endpoint **catalog** deta
+hai. Dono ko ek samajhna `08` §2.14.4 ka bug hai (`plan.changed` par entitlements badalna).
+
+**Failure par degrade, fail-closed nahi.** `08` §2.15.2 ka `plansForUi()` `5xx`/`404` par `[]` deta hai, exception
+nahi — kyunke plan list ka na hona kisi **authorization** faisle ko nahi badalta; renew `plan_key = null` par
+current plan par chalta rehta hai. Yeh `users/tenants` ke ulta hai (`§3.1.1`), jahan `5xx` par **throw** lazmi hai
+warna membership evict ho jati hai. Farq jaan boojh kar: **jo data access ka faisla deta hai woh fail-closed, jo
+sirf UI hai woh degrade ho sakta hai.**
+
 ### 3.2 `GET /api/v1/subscriptions/resolve`
 
 ```
@@ -734,9 +880,13 @@ X-KB-Entitlements-Version: 7
 `owner` role). Teen cases mein `resolve` hi fallback hai: `subscription.created` webhook miss ho jaye,
 tenant DB restore ho jaye, ya `owner_mapping` state fail ho kar retry ka intezar kare.
 
-`owner` **`null` ho sakta hai** (`tenants_registry.owner_user_id` set na ho). Us case mein product ko
-`tenant.provisioned` ka intezar karna hoga — apna guess (email match, pehla user) **nahi** karna.
-Email se owner guess karna account takeover ka rasta hai (`07` §3.6.1).
+`owner` **`null` ho sakta hai** (`tenants_registry.owner_user_id` set na ho). Us case mein product ko **`tenants:provision`
+re-run** karna hoga (`--owner-id` ke saath), ya agle `subscription.created` ka intezar karna hoga — apna guess
+(email match, pehla user) **nahi** karna. Email se owner guess karna account takeover ka rasta hai (`07` §3.6.1).
+
+> **`tenant.provisioned` ka intezar mat karein** — woh event 14 Nov 2026 ko **retire** ho gaya (`§4.1`, `08` §6.2).
+> Pehle yeh line usi ka intezar karne ko kehti thi, jo ab kabhi nahi aayega. Owner ka recovery path `tenants:provision`
+> re-run hai (`07` §6.6.2), aur woh idempotent hai (`07` §6.6.4).
 
 **304** — `If-None-Match` match, **empty body**. Yeh `02` §1.2 step 9 ka mechanism hai.
 
@@ -834,11 +984,11 @@ Accept: application/json
   "product_key": "mizaan",
   "changes": [
     { "id": 10483, "kb_user_id": 47, "kind": "blocked",
-      "blocked_at": "2026-11-13T05:45:00Z", "token_version": 8,
-      "changed_at": "2026-11-13T05:45:00Z" },
+      "blocked_at": "2026-11-13T05:45:00Z", "blocked_reason": "payment_fraud",
+      "token_version": 8, "changed_at": "2026-11-13T05:45:00Z" },
     { "id": 10484, "kb_user_id": 91, "kind": "access_revoked",
-      "blocked_at": null, "token_version": 3,
-      "changed_at": "2026-11-13T05:45:02Z" }
+      "blocked_at": null, "blocked_reason": null,
+      "token_version": 3, "changed_at": "2026-11-13T05:45:02Z" }
   ],
   "next_cursor": 10484,
   "has_more": false,
@@ -858,6 +1008,13 @@ Accept: application/json
 | `full=1` | Cursor ignore; poora **current blocked set** wapas (paginated). Recovery path |
 | `409 cursor_expired` | Cursor retention window (30 din) se purana → product `full=1` se resync kare |
 | `304` | `If-None-Match` supported, `ETag` = `next_cursor` ka hash. Steady state mein body zero |
+| `blocked_reason` | Nullable string, max 120. **`null` jab block nahi hua** (ya `user.enabled` ke baad clear ho gaya). `blocked_at` ke saath consistent: `blocked_at != null` ⟺ `blocked_reason != null` (`§5.1.1`) |
+
+**`blocked_reason` feed mein kyun hai:** `user.disabled` webhook akele kaafi nahi — woh ek delivery hai aur miss
+ho sakti hai (product down, retry `dead`, auto-disable). Feed **recovery path** hai (`§5.2` layer 3), aur agar
+recovery payload mein reason na ho to product ka `users.blocked_reason` column **stale** reh jata hai: block to
+lag jata hai magar support ko reason nahi pata, aur `user.enabled` ke baad purana reason chipka reh jata hai.
+Do sources, **ek hi shape** — warna product ko do parsing paths rakhne padte hain aur woh diverge karte hain.
 
 **Naya table (CP):**
 
@@ -868,6 +1025,7 @@ user_id         foreignId  index constrained('users') cascadeOnDelete
 product_id      foreignId  index constrained('products') cascadeOnDelete
 kind            string(20)             // blocked|unblocked|token_revoked|access_granted|access_revoked
 blocked_at      timestamp nullable
+blocked_reason  string(120) nullable   // users.blocked_reason ka mirror — §5.1.1
 token_version   unsignedInteger
 changed_at      timestamp
 // cursor = id. Index (product_id, id) — feed query exactly isi par chalti hai.
@@ -963,6 +1121,7 @@ token=eyJ...&token_type_hint=refresh_token
 | `GET /oauth/userinfo` | 120/min | `sub` | |
 | `GET /api/v1/subscriptions/resolve` | 600/min | `client_id` | |
 | `GET /api/v1/entitlements` | 240/min | `sub` | |
+| `GET /api/v1/plans` | **60/min** | `client_id` (client path) / `sub` (user path) | Product 5 min cache karta hai (§3.1.2 rule 7), is liye actual load ~0.2/min per product — 300× headroom. Limit is liye nahi ke load hai, is liye ke `include_hidden` guessing se na ho |
 | `POST /api/v1/subscriptions/renew-link` | 10/min | `sub` | |
 | `POST /login` | 5/min (already `throttle:login`) | email + IP | |
 
@@ -989,7 +1148,6 @@ token=eyJ...&token_type_hint=refresh_token
 
 | Event | Trigger | `data` keys |
 |---|---|---|
-| `tenant.provisioned` | Product ne tenant DB bana kar `kb_tenant_id` diya | `tenant_id`, `slug`, `product_url`, `owner_user_id` — `subdomain` 13 Nov 2026 ko hata (`04` v5) |
 | `subscription.created` | `∅ → trialing\|active` | `subscription_id`, `status`, `plan_key`, `seats`, `period`, **`tenant.owner`** = `{kb_user_id, email, name}` — **lazmi** (`07` §6.6.1) |
 | `subscription.renewed` | Payment verified, period shift | + `previous_period` |
 | `subscription.grace` | `period_end`/`trial_ends_at` cross | + `grace_ends_at` |
@@ -997,13 +1155,36 @@ token=eyJ...&token_type_hint=refresh_token
 | `subscription.cancelled` | User/admin cancel | + `cancelled_at`, `effective_at`, `reason` |
 | `subscription.suspended` | Admin suspend | + `suspended_at`, `reason` |
 | `plan.changed` | Plan upgrade/downgrade | `from_plan`, `to_plan`, `effective_at`, `proration_minor` |
-| `user.disabled` | Admin disables user | `kb_user_id`, `email`, `token_version`, `tenant_ids[]` |
-| `user.enabled` | Admin re-enables | same |
+| `user.disabled` | Admin disables user | `kb_user_id`, `email`, `token_version`, `tenant_ids[]`, `blocked_reason` (§5.5) |
+| `user.enabled` | Admin re-enables | same, `blocked_reason: null` |
 | `subscription.entitlements_changed` | Plan entitlements edit (`04` §3.4) | `version`, `hash` |
 | `invoice.paid` / `invoice.voided` | Invoice state | `invoice_number`, `total_minor` |
 | `payment.verified` / `payment.rejected` | TRX queue | `payment_id`, `reference`, `amount_minor` |
 
 `04` §1.3 ke `webhook_endpoints.events` JSON array inhein hold karta hai; `["*"]` sab. Unknown event name → endpoint save par `422` (typo se silent miss na ho).
+
+**`tenant.provisioned` RETIRED (14 Nov 2026, `08` §6.2).** Yeh event v1 se is table mein tha, magar iska koi
+consumer kabhi nahi tha:
+
+| Direction | Consumer | Na hone par kya tootta |
+|---|---|---|
+| product → CP (ack) | koi nahi | Kuch nahi. CP tenant registry khud banata hai aur `subscription.created` mein `tenant_id` deta hai (`04` §3.2) |
+| CP → product | koi nahi | Kuch nahi. Tenant row `tenants:provision` command se banti hai, owner mapping `subscription.created` se (`07` §6.6.1) |
+
+Dono taraf consumer nahi tha, is liye event sirf **ambiguity** paida karta tha — aur ek aisa inbound handler
+maintain karwata tha jo kabhi nahi chalta. `08` §1.8, `§2.2`, `§2.14.2` se bhi hata diya gaya.
+
+**Recovery ka asli rasta (jo `tenant.provisioned` faraham karta tha, woh ab yahan hai):**
+
+| Failure | Recovery |
+|---|---|
+| Provisioning ke dauraan `owner_mapping` fail | `php artisan tenants:provision {id} --owner-id=…` — idempotent, dobara chalana safe (`07` §6.6.4) |
+| Owner CP par badal gaya | Agla `subscription.created` / `resolve` naya `tenant.owner` dega (`07` §6.6.1) |
+| Membership drift | Agla SSO callback — `ReconcileMemberships` har login par chalta hai (`07` §3.6.1) |
+
+**Yeh `webhook_endpoints.events` par asar karta hai:** agar kisi endpoint ki saved list mein `tenant.provisioned`
+hai to woh entry ab **invalid** hai. Migration ya admin cleanup chahiye — warna endpoint save par naya `422`
+validation usay reject karega. `04` §6.1 ka validator is liye retired names ki explicit denylist rakhe.
 
 ### 4.2 Payload envelope
 
@@ -1118,7 +1299,7 @@ Retention 30 din (`04` §1.3). Admin screen `04` §4.1 #24.
 ```php
 // khattakbits-core/database/migrations/2026_11_13_100000_add_security_columns_to_users_table.php
 blocked_at      timestamp nullable  index   // D1: deactivate, delete nahi
-blocked_reason  string(190) nullable
+blocked_reason  string(120) nullable         // enum-like code, prose nahi (§5.1.1 contract)
 token_version   unsignedInteger default 0   // har revoke par ++
 ```
 
@@ -1153,6 +1334,39 @@ php artisan migrate
 ```
 
 **Version `1.5.0` kyun, `2.0.0` kyun nahi:** teenon columns additive hain — `blocked_at`/`blocked_reason` nullable, `token_version` ka default `0` (existing rows ke liye `0` hi sahi matlab hai: koi revoke nahi hua). Koi existing API break nahi hoti, is liye MAJOR nahi. `02` §4.1 ka MINOR rule lagta hai.
+
+**Column contract — yeh teen columns do payloads mein surface hote hain, aur teenon jagah **ek hi shape** honi chahiye:**
+
+| Column | Type | Null? | `users/changes` (§3.5) | `user.disabled` (§5.5) | Product ka `users` |
+|---|---|---|---|---|---|
+| `blocked_at` | `timestamp` | ✅ | `blocked_at` | `at` (block time) | `blocked_at` |
+| `blocked_reason` | `string(120)` | ✅ | `blocked_reason` | `blocked_reason` | `blocked_reason` |
+| `token_version` | `unsignedInteger` default `0` | ❌ | `token_version` | `token_version` | `token_version` |
+
+**Invariant jo migration aur payloads dono par lagta hai:** `blocked_at IS NULL` ⟺ `blocked_reason IS NULL`. Reason
+ke baghair block, ya block ke baghair reason — dono **invalid** state hain. `user.enabled` par dono `null` ho jate
+hain (reason clear hota hai, `"kyun block hua tha"` ka record audit log mein rehta hai, `users` row mein nahi).
+
+**`blocked_reason` ki values** (`04` §4.1 ka admin form, free-text nahi):
+
+| Value | Matlab |
+|---|---|
+| `payment_fraud` | Payment dispute/fraud |
+| `abuse` | ToS violation |
+| `security_incident` | Account compromise |
+| `admin_request` | Manual, reason admin note mein |
+| `disabled_in_kb` | Product-side default jab CP reason na de (`08` §2.14.5) |
+
+**`string(120)` kyun, `text` kyun nahi:** yeh **enum-like code** hai, prose nahi. Lambi free-text reason PII
+le sakti hai aur feed/webhook payload mein woh har delivery mein jayegi. Admin ka asli note `audit_logs` mein
+jata hai — `users.blocked_reason` sirf **machine-readable category** rakhta hai. `08` §2.6 ki migration bhi
+`string(120)` hai; dono ko match rehna **lazmi** hai warna `MigrateCommand` par truncation ya `Data too long`
+aayega.
+
+**`blocked_reason` optional hai product ke liye — magar payload mein `null` **hona** lazmi hai.** Field **omit**
+karna galat hai: product `??` se kaam chala lega, magar uske `users.blocked_reason` mein **purani value** chipki
+rahegi (kyunke woh `null` set nahi kar paya). Yeh wohi bug hai jo `08` §2.9.1 ne email ke liye pakda tha —
+"absent" aur "explicitly null" do alag cheezein hain, aur yahan farq **stale data** hai.
 
 **Deploy order:** migration **pehle**, phir woh code jo `token_version` padhta hai. Warna `column not found` par 500 aayega. Package release mein dono ek saath aate hain, is liye `composer update` ke baad `php artisan migrate` **deploy se pehle** chalana lazmi hai.
 
@@ -1282,22 +1496,37 @@ Product session middleware ko **har request** par yeh karna hoga:
     "email": "owner@acme.pk",
     "token_version": 8,
     "tenant_ids": ["01JQ8Z3K7M4X2V9B5N1C6D0RTA"],
-    "reason": "payment_fraud",
+    "blocked_at": "2026-11-13T05:45:00Z",
+    "blocked_reason": "payment_fraud",
     "at": "2026-11-13T05:45:00Z"
   }
 }
 ```
+
+**`blocked_reason` (14 Nov 2026):** pehle yeh field `reason` kehlati thi. Naam badal kar `blocked_reason` kiya —
+`users.blocked_reason` column se **byte-for-byte** match, taake product usay seedha assign kar sake
+(`$user->blocked_reason = $data['blocked_reason']`) bina mapping table ke. `blocked_at` bhi add hui: `at` envelope
+ka delivery time hai, `blocked_at` **block ka waqt** — dono alag ho sakte hain (retry, queued fan-out). Values
+`§5.1.1` ke table se (`payment_fraud`, `abuse`, `security_incident`, `admin_request`).
 
 `tenant_ids[]` — user sirf kuch tenants mein ho sakta hai; product ko pata hona chahiye kaunse sessions marne hain. Fan-out: ek delivery per `webhook_endpoint` (per product), `tenant_ids` us product ke filtered.
 
 **Product ka required action (contract):**
 
 ```
-1. kb_users WHERE id = kb_user_id -> blocked_at = now, token_version = data.token_version
+1. kb_users WHERE id = kb_user_id
+     blocked_at      = data.blocked_at        (NOT now() — retry par drift hota hai)
+     blocked_reason  = data.blocked_reason    (null = clear)
+     token_version   = data.token_version
 2. DELETE FROM sessions WHERE user_id = kb_user_id          (host-only sessions, D4)
 3. revoke local API tokens (Sanctum personal_access_tokens) if any
 4. next request -> EnsureUserActive 401
 ```
+
+**`blocked_at` payload se, `now()` se nahi:** webhook 6 retries ke baad 1 ghante baad bhi aa sakta hai (`§4.4`).
+`now()` likhna matlab block ka waqt **delivery** ka waqt ban jata hai, aur product ke support logs CP ke audit
+log se **1 ghanta** off ho jate hain. `user.enabled` par `blocked_reason = null` set karna **lazmi** hai — warna
+purana reason row par chipka rehta hai (`§5.1.1` ka invariant).
 
 Agar `kb_users` row maujood nahi (user ne kabhi us tenant mein login nahi kiya) → `200 ok`, kuch na karo. Retry se fayda nahi.
 
@@ -1379,7 +1608,7 @@ Isi tarah dono ke migrations `personal_access_tokens` (Sanctum) aur `oauth_acces
 
 ## 7. Test plan
 
-Feature tests, `tests/Feature/Identity/`. ~42 tests.
+Feature tests, `tests/Feature/Identity/`. ~56 tests.
 
 **Numbering append-only hai:** IDs stable rehte hain (T20 ko text mein reference kiya gaya hai), is liye naye tests end par add hote hain, beech mein renumber nahi hote.
 
@@ -1438,6 +1667,16 @@ Feature tests, `tests/Feature/Identity/`. ~42 tests.
 | T45 | `users/tenants` for a tenant-less user → `200 {"tenants":[]}`, **not** `404` | §3.1.1 empty |
 | T46 | `resolve` body carries `tenant.owner.{kb_user_id,email,name}`; when `owner_user_id` is null, `tenant.owner` is `null` (key present, not omitted) | `07` §6.6.1 |
 | T47 | renew-link `return_url` right host but `/{slug}` of a **different** tenant → `400 return_url_not_allowed` | §3.4 path check |
+| **v4 — plans, blocked_reason, CI gate** |||
+| T48 | `GET /api/v1/plans` par `POST`/`PATCH`/`DELETE` → **`405`** (route hi maujood nahi) | §3.1.2 rule 1 — list only |
+| T49 | `include_hidden=false` → `enterprise` (`is_public=false`) response mein **nahi**; `include_hidden=true` + first-party → **hai** | §3.1.2 rule 9 |
+| T50 | `include_hidden=true` + **third-party** client → `403 hidden_plans_not_allowed` (chup chaap degrade nahi) | §3.1.2 `is_first_party` |
+| T51 | `product_key` doosre product ka → `403 product_scope_mismatch` | §3.1.2 query rule |
+| T52 | plans: `If-None-Match` match → `304`; product ke koi plan na hon → `200 {"data":[]}`, **`404` nahi** | §3.1.2 rules 6–7 |
+| T53 | renew-link `plan_key` aisa key jo plans list mein nahi → `422 plan_not_available` | §3.1.2 rule 8 |
+| T54 | feed payload mein `blocked_reason` hai; `kind=unblocked` par `blocked_reason: null` **present** (omitted nahi) | §3.5, §5.1.1 invariant |
+| T55 | `user.disabled` payload mein `blocked_at` + `blocked_reason` dono; `user.enabled` par `blocked_reason: null` | §5.5 |
+| T56 | **CI gate:** koi bhi `GET` route ka controller `Model::create/update/delete` ya side-effect job dispatch nahi karta | §7.1 (read_only bypass) |
 
 
 **T20 ka detail:** snapshot `04` §3.3 se **key-for-key** compare karein (recursive `assertSame` on sorted keys). Yeh test contract drift pakadta hai — warna product aur CP chupchap diverge karte hain.
@@ -1445,6 +1684,116 @@ Feature tests, `tests/Feature/Identity/`. ~42 tests.
 **T40 ka detail:** test mein `session()->getId()` ko login se pehle aur baad mein compare karein — dono **different** hone chahiye, aur `oauth_auth_requests.session_id` naye id ke barabar hona chahiye. Agar re-bind na ho to test fail hoga (purana design mein yahi hota tha). Saath mein parallel login ka case: ek hi intent par do requests, sirf ek `302 /oauth/authorize` paye, doosra normal redirect par jaye.
 
 **T39 ka detail:** `token_expires_at` ko past mein set karein, refresh endpoint ko `invalid_grant` return karwayein, phir koi bhi protected route hit karein — expect: session `destroyed`, redirect SSO par, aur **agla** request bhi unauthenticated. Yeh test `EnsureTokenFresh` middleware ke baghair fail hoga — is liye yeh 900s claim ka guard hai.
+
+### 7.1 CI gate — `GET` routes must not write
+
+**Kyun:** `08` §2.12 ka `SubscriptionGuard` `read_only` mein `GET`/`HEAD`/`OPTIONS` allow karta hai. Yeh **design
+par majboor** hai — read-only ka matlab yahi hai. Magar uska natija: agar koi naya module `GET /invoices/{id}/send`
+jaisa route add kar de jo state badalta hai, to **grace period mein bhi woh chal jayega** aur `read_only` bypass
+ho jayega — bina kisi guard mein tabdeeli ke. Guard ko nahi pakadna; **route ko pakadna** hai.
+
+**Gate: har product app mein ek test jo fail ho jaye agar koi `GET` route data likhe.**
+
+```php
+// product app: tests/Feature/GetRoutesAreReadOnlyTest.php  (NEW)
+namespace Tests\Feature;
+
+use Illuminate\Routing\Route as RoutingRoute;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Route;
+use Tests\TenantTestCase;
+
+final class GetRoutesAreReadOnlyTest extends TenantTestCase
+{
+    /**
+     * Jaan boojh kar allowed — har ek ka comment lazmi hai.
+     * Isay barhane se pehle sawal: "kya yeh grace mein chalna chahiye?"
+     *
+     * @var array<int, string>
+     */
+    private array $allow = [
+        'logout',           // session delete — auth ka hissa, grace se pehle
+        'kb.billing.return', // gateway se wapsi — read-only mein bhi chalti hai
+    ];
+
+    public function test_get_routes_do_not_write(): void
+    {
+        Queue::fake();
+
+        $writes = [];
+
+        // Dono connections — tenancy default ko `tenant` par switch karti hai
+        foreach (['central', 'tenant'] as $connection) {
+            DB::connection($connection)->listen(function ($query) use (&$writes, $connection) {
+                if (preg_match('/^\s*(insert|update|delete|replace|alter|drop|truncate|create)\b/i', $query->sql)) {
+                    $writes[] = $connection.': '.$query->sql;
+                }
+            });
+        }
+
+        $this->actingAs($this->ownerUser());
+
+        $failures = [];
+
+        foreach (Route::getRoutes()->getRoutes() as $route) {
+            if (! in_array('GET', $route->methods(), true)) {
+                continue;
+            }
+            if ($route->getName() !== null && in_array($route->getName(), $this->allow, true)) {
+                continue;
+            }
+
+            $writes = [];
+
+            try {
+                $this->get('/'.ltrim($route->uri(), '/'));
+            } catch (\Throwable) {
+                // 403/404/500 bhi theek — hum sirf side effects dekh rahe hain
+            }
+
+            if ($writes !== []) {
+                $failures[] = $route->uri().' -> '.$writes[0];
+            }
+        }
+
+        $this->assertSame([], $failures, "GET routes ne data likha:\n".implode("\n", $failures));
+
+        // Queue bhi: GET par side-effect job dispatch nahi hona chahiye
+        $this->assertSame([], Queue::pushedJobs(), 'GET route ne job dispatch kiya');
+    }
+
+    private function ownerUser(): \App\Models\User
+    {
+        // ... owner role wala user, tenant context mein
+    }
+}
+```
+
+**`DB::listen` `Queue::fake` se behtar kyun:** static analysis (`Model::create` grep) `DB::table()->update()`,
+raw SQL, `upsert()`, `firstOrCreate()` aur model events ke through hone wale writes **miss** karta hai. `DB::listen`
+**actual queries** dekhta hai — jo bhi likha jaye, pakda jayega. Yeh slow hai (har GET route hit hota hai) magar
+yeh **nightly** chalta hai, per-commit nahi.
+
+**Is gate ki honest limits — isay "proof" na samjhein:**
+
+| Limit | Asar |
+|---|---|
+| Ek hi user/role se hit hota hai | Jis route par sirf admin ja sakta hai, woh `403` par ruk jayega aur uska write **nahi** pakda jayega |
+| Route params | `/{invoice}` par `1` jayega — `404` par ruk sakta hai |
+| `Queue::fake()` sirf `dispatch` pakadta hai | Sync jobs, `Event::dispatch` ke listeners, aur `Mail::` (agar `Mail::fake` na ho) chhoot sakte hain |
+| Destructive GETs | `GET /invoices/{id}/delete` — test use **chala** dega agar woh write karta hai... aur phir fail karega. Yani test khud data tor sakta hai |
+
+**Aakhri limit ki wajah se:** yeh test **`RefreshDatabase` + `DatabaseTransactions`** ke andar chalein, taake
+jo bhi likha jaye rollback ho jaye. Aur CI mein **alag database** par chalein, dev DB par kabhi nahi.
+
+**Static pre-check (fast, per-commit):** controller files par ek grep gate jo `::create(`, `->update(`, `->delete(`,
+`->save(`, `->forceDelete(`, `->dispatch(` ko `GET` route methods ke andar dhoondhe. Yeh runtime test ka **subset**
+hai magar milliseconds mein chalta hai, is liye dono rakhein — static commit par, runtime nightly.
+
+**Yeh gate `08` §2.12 ke us note ko enforce karta hai:** *"state badalne wala kuch bhi `POST`/`PUT`/`PATCH`/`DELETE`
+ho"*. Bina gate ke woh note sirf ek **umeed** hai; gate ke saath woh **contract** hai.
+
 
 ---
 
@@ -1459,10 +1808,11 @@ Feature tests, `tests/Feature/Identity/`. ~42 tests.
 | **I4** | API: resolve, entitlements, **users/changes feed**, renew-link, introspect, revoke + rate limits + versioning | 4.5d |
 | **I5** | Webhooks: envelope, HMAC, retry/backoff, delivery log, replay, admin replay | 3d |
 | **I6** | Disable propagation: `user_security_changes` fan-out, `EnsureTokenFresh` middleware in core, session purge | 3d |
-| **I7** | Tests (T1–T47) + docs | 3d |
+| **I7** | Tests (T1–T56) + docs | 3d |
 | **I8** | `GET /api/v1/users/tenants` — query, `product_key` filter, ETag, `Cache-Control`, fail-closed contract (`07` §3.6.1) | 1d |
+| **I9** | `GET /api/v1/plans` — query, `include_hidden` + first-party gate, ETag/304, `deprecated_at`; `tenant.provisioned` retirement (event list + `webhook_endpoints.events` cleanup); `blocked_reason`/`blocked_at` in feed + `user.disabled` payload; **CI gate** (`§7.1`) | 1d |
 
-**Total ≈ 26.5 days ≈ 5.5 hafte solo; 2 devs par ~3 hafte** (I2/I3 parallel, I5/I6 parallel; I1 → I4 sequential).
+**Total ≈ 27.5 days ≈ 5.5–6 hafte solo; 2 devs par ~3 hafte** (I2/I3 parallel, I5/I6 parallel; I1 → I4 sequential).
 
 **Dependencies:** I0 blocking — aur I0 mein **package release** shamil hai, kyunke migration core package mein hai (§5.1.1). I1 CP ke `products` table par depend (S1 of `04`). I4 `subscriptions` par (S3 of `04`). I5 `webhook_endpoints` par (S7 of `04`). I6 `users` columns par (I0) aur `EnsureTokenFresh` par (I0 ka package release).
 
@@ -1471,6 +1821,8 @@ Feature tests, `tests/Feature/Identity/`. ~42 tests.
 **Effort badhne ki wajah (v1 → v2):** I3 +0.5d (session re-bind + parallel-login race), I4 +0.5d (naya feed endpoint + cursor handling), I0 +0.5d (CI + package release process). Kul +1.5d, magar do design bugs band hue jo production mein mehngay padte (login interrupt kabhi kaam na karna; feed ka rate limit tor dena).
 
 **Effort badhne ki wajah (v2 → v3):** naya I8 +1d (`users/tenants`). Yeh endpoint **blocking** hai — `07` §6.6.3 ka `TenantOwnerMapper` aur §3.6.1 ka `ReconcileMemberships` dono iske baghair ship nahi ho sakte. Iske sath I1 ka host-binding check **simpler** hua (wildcard/ends_with logic gaya), magar uska bacha hua effort I8 mein chala gaya — net +1d.
+
+**Effort badhne ki wajah (v3 → v4):** naya I9 +1d. Ismein `plans` endpoint (~0.4d), `tenant.provisioned` retirement + `webhook_endpoints.events` cleanup (~0.15d), `blocked_reason`/`blocked_at` payloads (~0.15d), aur CI gate `§7.1` (~0.3d). CI gate **defensive** hai — woh koi feature nahi deta, magar `read_only` bypass ka woh ek rasta band karta hai jo naye modules ke saath **khamoshi se** khul jata.
 
 ---
 
@@ -1525,7 +1877,7 @@ Feature tests, `tests/Feature/Identity/`. ~42 tests.
 | 6 | **Naya endpoint `GET /api/v1/users/tenants`** — endpoints table, auth matrix, aur poora §3.1.1 | §1.2, §3.1, **§3.1.1 (naya)** | Yeh `kb_user_tenant` ka **authoritative source** hai (`07` §3.6.1). Iske baghair product membership slug se guess karta — jo privilege escalation hai. **Blocking dependency** |
 | 7 | `resolve` response mein **`tenant.owner = {kb_user_id, email, name}`** + `null` case | §3.2 | Re-provision, DB restore, aur webhook-miss ka fallback (`07` §6.6.1). Owner `null` ho to product guess **na** kare — email match account takeover ka rasta hai |
 | 8 | `subscription.created` ke `data` mein **`tenant.owner` lazmi** | §4.1 | Provisioning ka `owner_mapping` state iske baghair nahi chal sakta. Aaj sirf `subscription_id`, `status`, `plan_key`, `seats`, `period` thay |
-| 9 | `tenant.provisioned`: `subdomain` → `product_url` | §4.1 | `04` v5 ne column rename kiya. Warna CP ek aisa field bhejta jo product ke paas hai hi nahi |
+| 9 | `tenant.provisioned`: `subdomain` → `product_url` | §4.1 | `04` v5 ne column rename kiya. Warna CP ek aisa field bhejta jo product ke paas hai hi nahi. **v4 mein yeh row poori tarah retire ho gayi** — event hi khatam |
 | 10 | renew-link: `return_url` example `https://acme.mizaanbitserp.com/...` → `https://mizaanbitserp.com/acme/...`; validation mein **path check** add | §3.4 | Host-based example path-based mein ghalat URL sikhata hai. Aur host check akela kaafi nahi: `/beta/...` bhej kar user doosre tenant ke page par land kar sakta hai |
 | 11 | `roles` honesty paragraph: `role_hint` vs `model_has_roles` | §1.8 | `07` §6.6.2 ne `kb_user_tenant.role_hint` add kiya — likhna zaroori tha ke authority tenant DB par hai, hint par nahi |
 | 12 | `prompt=none` ka "product `app.`" → "product ke central host" | §9 item 2 | Path-based mein product ka host `app.` nahi, `mizaanbitserp.com` hai |
@@ -1542,4 +1894,33 @@ ne yahi note kiya tha; ab dono taraf se reference band hai.
 
 ---
 
-*Yeh document design hai, implementation nahi. NOT VERIFIED: Passport ka actual install (sirf `--dry-run --ignore-platform-req=ext-sodium` tak, `v13.10.0` resolve hua), `oauth_clients.id` ka runtime type (v13.10 UUID expected), `oauth_signing_keys` ke saath Passport ka RS256 signer actually replace ho sakta hai ya fork chahiye, sodium enable hone ke baad `php -m` (host `php.ini` change chahiye), aur `phpseclib 4.0.3` par advisory khatam hone ki koi date nahi (is liye pin `13.10.*` — §0.2.1).*
+### 14 Nov 2026 — plans endpoint, event retirement, blocked_reason, CI gate (v4)
+
+`08-EXAMPLE-PRODUCT-INTEGRATION.md` ke pass se aaye hue chaar gaps. Teeno **contract-level** hain — koi naya table
+nahi, koi schema change nahi (`user_security_changes` mein ek nullable column ke ilawa).
+
+| # | Kya badla | Kahan | Kyun |
+|---|---|---|---|
+| 1 | **Naya endpoint `GET /api/v1/plans`** — endpoints table, auth matrix, poora §3.1.2 (query params, 200 response, 9 rules), rate limit 60/min, tests T48–T53 | §1.2, §3.1, **§3.1.2 (naya)**, §3.8, §7 | `08` §2.15.2 ka `plansForUi()` khali array return kar raha tha — product ke `Billing/Expired` par upgrade options dikhane ka koi source nahi tha. Contract **`08` §6.1 se hoo-ba-hoo** (list-only, ETag/304, `-1` = unlimited, `is_public=false` sirf first-party + `include_hidden`, empty ≠ 404, `deprecated_at`) |
+| 2 | **`tenant.provisioned` retired** — event table se hata, retirement rationale + recovery table + `webhook_endpoints.events` cleanup note add | §4.1 | Dono directions ka koi consumer nahi tha (product → CP ack: CP registry khud banata hai; CP → product: tenant row `tenants:provision` se banti hai). `08` §6.2 ne retire kiya; `05` ab match karta hai. **Recovery = `tenants:provision` re-run** |
+| 3 | **`blocked_reason` + `blocked_at` payloads mein** — feed JSON + rules + `user_security_changes` column; `user.disabled` mein `reason` → `blocked_reason` + naya `blocked_at`; column contract table §5.1.1 mein | §3.5, §5.1.1, §5.5, §4.1 | `users.blocked_reason` migration mein hai (`08` §2.6, `string(120)`) magar **kisi payload mein nahi thi** — yani product ka column kabhi bharta hi nahi tha. Feed recovery path hai; agar usme reason na ho to product ka `blocked_reason` stale reh jata hai. **Migration `string(190)` → `string(120)`** corrected (`08` §2.6 se match) |
+| 4 | **CI gate `§7.1`** — `GetRoutesAreReadOnlyTest`: har `GET` route hit karke `DB::listen` se writes pakro + `Queue::fake` se job dispatch; allowlist + limits + static pre-check | **§7.1 (naya)**, §7 **T56** | `08` §2.12 `read_only` mein `GET` allow karta hai — design par majboor. Naya module `GET /invoices/{id}/send` add kare to grace mein woh **chal jayega** aur `read_only` bypass ho jayega, bina guard chhue. Guard ko nahi, **route ko** pakadna hai |
+| 5 | Tests **T48–T56**, effort **I9 +1d**, total 26.5d → **27.5d** | §7, §8 | Naya endpoint + payload fields + CI gate ke liye coverage |
+
+**`blocked_reason` ka `reason` → rename ek breaking payload change hai** — magar Phase 1 mein `user.disabled`
+kabhi ship nahi hua (`08` §2.14.5 abhi NEW hai), is liye koi product is par depend nahi karta. Agla koi aisa
+rename **`api_version` bump** maangega (`§3.9`).
+
+**Kya nahi badla:** Passport/OIDC layer, `oauth_auth_requests`, `oauth_signing_keys`, PKCE, scope set, webhook
+envelope/HMAC/retry/backoff, disable propagation ke 4 layers, `isSafeRedirect` ke G2–G5, `users/tenants`
+(`§3.1.1`), `resolve`/`entitlements`/`renew-link`. **Table count same (21)** — `plans` `04` ke
+`plans`/`plan_entitlements` ka JOIN hai, `user_security_changes.blocked_reason` ek nullable column hai.
+
+**Cross-doc asar:** `08` §2.15.2 ka `plansForUi()` ab **asli** hai (pehle `NOT VERIFIED` gap tha). `08` §6.1 ka
+contract ab **canonical `05` §3.1.2** hai — `08` ne apni copy par banner laga diya hai ("pehle `05` mein badlein,
+phir mirror karein"), taake dono diverge na karein. `08` §6.2/§6.3 ke decisions ab `05` mein reflected hain, aur
+`08` §2.12 ke "GET par mutation na karein" note ko `§7.1` ka gate enforce karta hai.
+
+---
+
+*Yeh document design hai, implementation nahi. NOT VERIFIED: Passport ka actual install (sirf `--dry-run --ignore-platform-req=ext-sodium` tak, `v13.10.0` resolve hua), `oauth_clients.id` ka runtime type (v13.10 UUID expected), `oauth_signing_keys` ke saath Passport ka RS256 signer actually replace ho sakta hai ya fork chahiye, sodium enable hone ke baad `php -m` (host `php.ini` change chahiye), aur `phpseclib 4.0.3` par advisory khatam hone ki koi date nahi (is liye pin `13.10.*` — §0.2.1). `GET /api/v1/plans` ka payload `04` ke `plans`/`plan_entitlements` par depend karta hai — woh tables `04` ke 18 mein hain magar unka exact column set `04` §1.3 se confirm karna hai jab woh build hon.*

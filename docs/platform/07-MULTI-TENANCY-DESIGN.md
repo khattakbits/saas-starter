@@ -2398,7 +2398,7 @@ abstract class TenantTestCase extends TestCase
 | **§1.2 endpoints table (~line 182)** | **Naya endpoint:** `GET /api/v1/users/tenants` (user bearer) — caller ke tenants ki list, `tenants_registry` + `kb_user_product_access` JOIN se. Yeh `kb_user_tenant` ka **authoritative source** hai (`07` §3.6.1) |
 | **§4.1 `subscription.created` row (~line 909)** | `data` mein **`tenant.owner = { kb_user_id, email, name }`** add karna **lazmi** — provisioning owner mapping iske baghair nahi ho sakti (`07` §6.6.1). Aaj sirf `subscription_id`, `status`, `plan_key`, `seats`, `period` hain |
 | **§3.2 `resolve` response (~line 634)** | `tenant.owner = { kb_user_id, email, name }` add karein — re-provision / DB restore / webhook miss ka fallback |
-| **§4.1 `tenant.provisioned` row (~line 907)** | `data.owner_user_id` already hai ✅ — magar woh **product → CP** direction hai. Reverse direction (`subscription.created`/`resolve`) mein owner **nahi** hai, woh gap upar do rows se band hota hai |
+| **§4.1 `tenant.provisioned` row (~line 907)** | ~~`data.owner_user_id` already hai ✅ — magar woh **product → CP** direction hai~~ → **RETIRED 14 Nov 2026** (`05` v4, `08` §6.2). Event dono directions se hataya gaya: koi consumer nahi tha. Owner ka recovery path `tenants:provision` re-run hai (`§6.6.2`), `tenant.provisioned` nahi. Is row ki jagah `subscription.created`/`resolve` ke `tenant.owner` rows (upar do) hi kaafi hain |
 | **§1.8 `roles` honesty (~line 393)** | "CP sirf `kb_user_product_access.role` deta hai" ✅ — `07` §6.6.2 isay `kb_user_tenant.role_hint` mein store karta hai, authority tenant DB ke `model_has_roles` par |
 
 ### 11.4 `06-PAYMENTS-DESIGN.md`
