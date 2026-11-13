@@ -1,0 +1,864 @@
+# 04 — Control Plane Design (data model, state machine, entitlements, admin, storefront)
+
+**Date:** 13 Nov 2026
+**Repo:** `E:/LaraProjects/saas-starter` (branch `extract/package-skeleton`)
+**Depends on:** `docs/platform/02-ARCHITECTURE-DECISIONS.md` (§0 D1–D5, §5), `docs/platform/03-EXTRACTION-PLAN.md` (Part C)
+**Inputs:** `composer.json`, `.env`, `config/database.php`, `phpunit.xml`, `app/Modules/Settings/**`, `khattakbits-core/src/Support/{TableQuery,PermissionCatalog,MenuBuilder,DocumentRegistry,Naming}.php`, `khattakbits-ui/src/**`
+**Rule:** Yeh document **schema snippets + design** hai. Koi migration, model ya code nahi likha gaya.
+
+---
+
+## 0. DB target (detected, not assumed)
+
+| Evidence | Value |
+|---|---|
+| `.env:8` | `DB_CONNECTION=mysql` |
+| `.env:9-11` | `DB_HOST=127.0.0.1`, `DB_PORT=3306`, `DB_DATABASE=admin_core` |
+| `config/database.php:20` | `'default' => env('DB_CONNECTION', 'sqlite')` — fallback sirf env missing hone par |
+| `phpunit.xml:26-27` | `DB_CONNECTION=sqlite`, `DB_DATABASE=:memory:` |
+| `composer.json` | `laravel/framework 13.38.0`, PHP 8.5 (AGENTS.md) |
+
+**Verdict: MySQL is the target database.** Tests SQLite par chalte hain.
+
+Local MySQL `127.0.0.1:3306` par is waqt **connection refused** de raha hai, is liye server version **NOT VERIFIED**. Design **MySQL 8.0+** assume karta hai (`json` columns, instant `ADD COLUMN`) magar yeh teen constraints lazmi hain taake SQLite suite bhi chale:
+
+1. **Koi partial/filtered unique index nahi** (MySQL mein bhi nahi hai, SQLite mein hai) — "ek hi active X" app-level check + plain unique se enforce hoga.
+2. **Koi generated column, `FULLTEXT`, ya `CHECK` constraint nahi** — Laravel inhein cross-driver reliably nahi banata.
+3. **`ENUM` nahi** — `string(20)` + PHP enum cast. Wajah: naya state add karne par MySQL ENUM ka `ALTER` table rebuild karta hai (8.0 se pehle), aur SQLite par `enum` `check` constraint ban jata hai jo `ALTER` nahi hota.
+
+**Yeh control plane ki apni single central DB hai** (`admin_core`). `02` §5.1 ka "central DB" **product app** ka hai (`tenants`, `domains`, `kb_users`, `sso_handoffs`) — dono alag databases hain, naam ki similarity coincidence hai. Product ka central DB yahan se sirf HTTP se baat karta hai.
+
+---
+
+## 1. Data model
+
+### 1.1 ERD
+
+```mermaid
+erDiagram
+    PRODUCTS ||--o{ PRODUCT_MODULES : has
+    PRODUCTS ||--o{ PRODUCT_FEATURES : has
+    PRODUCTS ||--o{ PRODUCT_DOCTYPES : has
+    PRODUCTS ||--o{ PRODUCT_REPORTS : has
+    PRODUCTS ||--o{ PLANS : sells
+    PRODUCTS ||--o{ PRODUCT_OAUTH_CLIENTS : "auth via"
+    PRODUCTS ||--o{ WEBHOOK_ENDPOINTS : notifies
+    PRODUCTS ||--o{ TENANTS_REGISTRY : "tenants in"
+    PRODUCTS ||--o{ KB_USER_PRODUCT_ACCESS : "access to"
+    PRODUCT_MODULES ||--o{ PRODUCT_FEATURES : groups
+    PRODUCT_MODULES ||--o{ PRODUCT_DOCTYPES : groups
+    PRODUCT_MODULES ||--o{ PRODUCT_REPORTS : groups
+    PLANS ||--o{ PLAN_PRICES : priced
+    PLANS ||--o{ PLAN_ENTITLEMENTS : grants
+    PRODUCT_FEATURES |o--o{ PLAN_ENTITLEMENTS : "typed by"
+    PLANS ||--o{ SUBSCRIPTIONS : "subscribed as"
+    TENANTS_REGISTRY ||--o| SUBSCRIPTIONS : holds
+    SUBSCRIPTIONS ||--o{ SUBSCRIPTION_EVENTS : logs
+    SUBSCRIPTIONS ||--o{ INVOICES : bills
+    INVOICES ||--o{ INVOICE_ITEMS : contains
+    INVOICES ||--o{ PAYMENTS : "paid by"
+    PAYMENTS |o--o{ SUBSCRIPTION_EVENTS : triggers
+    WEBHOOK_ENDPOINTS ||--o{ WEBHOOK_DELIVERIES : sends
+    USERS ||--o{ TENANTS_REGISTRY : owns
+    USERS ||--o{ KB_USER_PRODUCT_ACCESS : granted
+    USERS |o--o{ INVOICES : buys
+    USERS |o--o{ PAYMENTS : submits
+```
+
+### 1.2 Ownership: control plane vs core package
+
+| Table | Kahan | Kyun |
+|---|---|---|
+| 18 tables neeche §1.3 mein | **CP app** (`app/Modules/Platform`) | Catalog/billing/tenancy sirf CP ka kaam hai; product ko in ka pata bhi nahi chalna chahiye |
+| `users`, `settings`, `audit_logs`, `document_sequences` | **`khattakbits/core`** (already hai) | CP aur products dono use karte hain; `Naming::next()` invoice numbering bhi isi se chalega |
+| `security_events` | **`khattakbits/core`** (banana hai) | D2 ne central kaha; CP aur har product apne central DB mein likhta hai. **Aaj maujood nahi** — koi migration nahi (NOT VERIFIED as built) |
+| `sessions`, `cache`, `jobs`, `personal_access_tokens`, `password_reset_tokens` | Laravel/host | Framework infra |
+
+**Ek code-level cheez core mein jayegi, table nahi:** entitlement snapshot ka **contract** (`KhattakBits\Core\Entitlements\EntitlementSet` — `fromArray()`, `flag()`, `limit()`, `quota()`, `hash()`). Wajah: CP snapshot *banata* hai, product usay *padhta* hai. Shape dono taraf same hona chahiye warna har product apna parser likhega. Tables CP mein rahengi.
+
+`security_events` (D2, `02` §5.2b): `id, kb_user_id nullable, tenant_id nullable, event, email_attempted, ip, user_agent, meta json, created_at` — append-only, 90 din retention (retention abhi **open question**, `02` §6).
+
+### 1.3 Migration-ready columns
+
+Convention: har table `created_at`/`updated_at` (Laravel timestamps) unless likha ho ke nahi. Money **integer minor units** mein (PKR ka minor unit = paisa, 2 dp) — float kabhi nahi, warna `entitlements_hash` har recompute par badal jayega.
+
+```php
+// ── products ─────────────────────────────────────────────────────────────
+id                  bigIncrements
+key                 string(40)   unique          // 'mizaan' — kb-product.json ka key
+name                string(120)
+tagline             string(190)  nullable
+description         text         nullable
+domain              string(190)  nullable unique // 'mizaanbitserp.com' (D3 subdomain base)
+docs_url            string(190)  nullable
+support_email       string(190)  nullable
+logo_path           string(190)  nullable
+status              string(20)   index default 'draft'   // draft|active|sunset|archived
+min_starter_version string(20)   nullable        // 'khattakbits:doctor' outdated banner (02 §4.2)
+manifest_version    string(40)   nullable
+manifest_hash       char(64)     nullable        // sha256, idempotent sync (§6)
+manifest_synced_at  timestamp    nullable
+metadata            json         nullable
+softDeletes         deleted_at
+// index: (status, name)
+
+// ── product_modules ──────────────────────────────────────────────────────
+id                  bigIncrements
+product_id          foreignId  constrained('products') cascadeOnDelete
+key                 string(60)                  // 'accounting'
+name                string(120)
+description         string(255) nullable
+is_core             boolean default false       // disable nahi ho sakta
+status              string(20)  index default 'active'  // active|deprecated|removed
+deprecated_at       timestamp nullable
+removed_at          timestamp nullable           // §6 grandfather rule isi par chalti hai
+sort_order          unsignedSmallInteger default 0
+unique (product_id, key)
+// NO softDeletes — status + removed_at audit-safe hai aur FK integrity bachati hai
+
+// ── product_features ─────────────────────────────────────────────────────
+id                  bigIncrements
+product_id          foreignId  constrained('products') cascadeOnDelete
+product_module_id   foreignId  nullable constrained('product_modules') nullOnDelete
+key                 string(80)                  // 'inventory.warehouses', 'storage'
+name                string(120)
+description         string(255) nullable
+type                string(10)                  // flag|limit|quota  ← authoritative typing
+default_value       string(60)  nullable        // '0' | '-1' (unlimited)
+unit                string(20)  nullable        // users|mb|calls|invoices
+reset_period        string(10)  nullable        // month|year|null
+status              string(20)  index default 'active'
+unique (product_id, key)
+index (product_module_id, status)
+
+// ── product_doctypes ─────────────────────────────────────────────────────
+// Mirror of DocumentRegistry ka shape (02 §2.1, DocumentRegistry::all())
+id                  bigIncrements
+product_id          foreignId  constrained('products') cascadeOnDelete
+product_module_id   foreignId  nullable constrained('product_modules') nullOnDelete
+type                string(60)                  // 'invoice' — DocumentRegistry key
+label               string(120)
+model               string(190) nullable        // FQCN, sirf documentation ke liye (CP load nahi karta)
+permission_prefix   string(120)                 // 'accounting.invoices' — DocumentRegistry 'can'
+url                 string(190) nullable        // '/accounting/invoices'
+actions             json        nullable        // DocumentRegistry::ACTIONS ka override
+status              string(20)  index default 'active'
+unique (product_id, type)
+
+// ── product_reports ──────────────────────────────────────────────────────
+id                  bigIncrements
+product_id          foreignId  constrained('products') cascadeOnDelete
+product_module_id   foreignId  nullable constrained('product_modules') nullOnDelete
+key                 string(80)
+name                string(120)
+description         string(255) nullable
+route               string(190) nullable        // product-side path
+permission          string(120) nullable
+is_exportable       boolean default false
+status              string(20)  index default 'active'
+unique (product_id, key)
+
+// ── plans ────────────────────────────────────────────────────────────────
+id                  bigIncrements
+product_id          foreignId  constrained('products') cascadeOnDelete
+key                 string(60)                  // 'growth'
+name                string(120)
+description         text        nullable
+tier                unsignedSmallInteger         // upgrade/downgrade comparison isi se
+billing_mode        string(20)  default 'per_tenant'  // per_tenant (Phase 1) | per_seat (Phase 2)
+seat_limit          unsignedInteger nullable     // null = unlimited
+trial_days          unsignedSmallInteger default 0
+grace_days          unsignedSmallInteger default 7
+is_public           boolean default true        // storefront par dikhe ya sales-only
+status              string(20)  index default 'draft'  // draft|active|retired
+sort_order          unsignedSmallInteger default 0
+unique (product_id, key)
+index (product_id, status, sort_order)
+
+// ── plan_prices ──────────────────────────────────────────────────────────
+id                  bigIncrements
+plan_id             foreignId  constrained('plans') cascadeOnDelete
+currency            char(3)  default 'PKR'
+interval            string(10)                  // month|year
+amount_minor        unsignedBigInteger           // 1500000 = PKR 15,000.00
+compare_at_minor    unsignedBigInteger nullable  // strike-through
+is_active           boolean default true
+unique (plan_id, currency, interval)
+// Price history yahan NAHI rakhi — invoice_items amount freeze karte hain, is liye
+// history invoices se derivable hai. Yeh jaan boojh kar hai (ek kam table, ek kam sync point).
+
+// ── plan_entitlements ────────────────────────────────────────────────────
+id                  bigIncrements
+plan_id             foreignId  constrained('plans') cascadeOnDelete
+product_feature_id  foreignId  nullable constrained('product_features') nullOnDelete
+key                 string(80)                  // 'accounting.invoices', 'seats'
+type                string(10)                  // flag|limit|quota — fallback typing
+value               string(60)                  // '1' | '0' | '25' | '-1' (unlimited)
+unit                string(20)  nullable
+reset_period        string(10)  nullable
+unique (plan_id, key)
+// product_feature_id nullable kyunke plan aisi key grant kar sakta hai jo catalog mein
+// abhi nahi (forward compat). Type precedence §3.1 mein.
+
+// ── tenants_registry ─────────────────────────────────────────────────────
+id                  bigIncrements
+kb_tenant_id        char(26)  unique            // ULID — product app ke `tenants.id`
+product_id          foreignId  constrained('products') cascadeOnDelete
+slug                string(60)                  // 'acme' — subdomain label
+subdomain           string(190) unique          // 'acme.mizaanbitserp.com' (handoff target_host, D4)
+owner_user_id       foreignId  constrained('users') restrictOnDelete
+status              string(20)  index default 'provisioning'
+                                                // provisioning|active|read_only|suspended|archived
+database_name       string(120) nullable        // product-side tenant DB (informational)
+provisioned_at      timestamp nullable
+last_seen_at        timestamp nullable
+notes               text        nullable
+softDeletes         deleted_at                  // archive, delete nahi
+unique (product_id, slug)
+index (owner_user_id, status)
+// Reserved slugs (D3: www, app, admin, api, auth, status, docs, mail, assets, cdn) app-level check
+
+// ── subscriptions ────────────────────────────────────────────────────────
+id                  bigIncrements
+public_id           char(26)  unique            // ULID — webhooks/API mein yeh jata hai, id nahi
+tenants_registry_id foreignId  unique constrained('tenants_registry') cascadeOnDelete
+plan_id             foreignId  constrained('plans') restrictOnDelete
+status              string(20)  index           // §2 ke 7 states
+current_period_start timestamp
+current_period_end   timestamp  index
+trial_ends_at        timestamp nullable
+grace_ends_at        timestamp nullable  index
+cancel_at_period_end boolean default false
+cancelled_at         timestamp nullable
+suspended_at         timestamp nullable
+suspended_reason     string(190) nullable
+seats                unsignedInteger default 1
+currency             char(3) default 'PKR'
+interval             string(10)
+amount_minor         unsignedBigInteger         // current period ka frozen price
+entitlements_hash    char(64)  nullable         // §3, ETag bhi isi se
+entitlements_version unsignedInteger default 1  // har mutation par ++
+entitlement_snapshot json      nullable         // last computed (debug/audit)
+// unique(tenants_registry_id) = ek tenant per product ek hi subscription row.
+// Plan change / renew / cancel-reactivate usi row ko mutate karte hain; history
+// subscription_events + invoices mein rehti hai. Isse "partial unique index" ki
+// zaroorat khatam ho jati hai (§0 constraint 1).
+// index (status, current_period_end) — scheduler isi par chalta hai
+
+// ── subscription_events ──────────────────────────────────────────────────
+id                  bigIncrements                // append-only, updated_at NULL
+subscription_id     foreignId  index constrained('subscriptions') cascadeOnDelete
+type                string(40)  index            // created|trial_started|activated|renewed|
+                                                 // upgraded|downgraded|plan_changed|past_due|
+                                                 // entered_grace|expired|cancelled|reactivated|
+                                                 // suspended|resumed|seat_changed
+from_status         string(20)  nullable
+to_status           string(20)  nullable
+actor_type          string(10)                   // user|admin|system|payment
+actor_id            foreignId  nullable constrained('users') nullOnDelete
+invoice_id          foreignId  nullable constrained('invoices') nullOnDelete
+payment_id          foreignId  nullable constrained('payments') nullOnDelete
+data                json        nullable         // from/to plan, amounts, proration, reason
+occurred_at         timestamp  index             // created_at se alag — backfill/import ke liye
+created_at          timestamp
+// UPDATED_AT = null
+
+// ── invoices ─────────────────────────────────────────────────────────────
+id                  bigIncrements
+number              string(30)  unique           // Naming::next('INV') → INV-00001
+subscription_id     foreignId  nullable constrained('subscriptions') nullOnDelete
+tenants_registry_id foreignId  nullable constrained('tenants_registry') nullOnDelete
+user_id             foreignId  nullable constrained('users') nullOnDelete   // buyer
+status              string(20)  index default 'draft'
+                                                // draft|open|paid|void|refunded|partially_refunded|uncollectible
+currency            char(3) default 'PKR'
+subtotal_minor      unsignedBigInteger default 0
+discount_minor      unsignedBigInteger default 0
+tax_minor           unsignedBigInteger default 0
+total_minor         unsignedBigInteger default 0
+amount_paid_minor   unsignedBigInteger default 0
+amount_due_minor    unsignedBigInteger default 0
+period_start        timestamp nullable
+period_end          timestamp nullable
+issued_at           timestamp nullable
+due_at              timestamp nullable  index
+paid_at             timestamp nullable
+idempotency_key     string(64)  nullable unique  // checkout session dedupe
+notes               text        nullable
+// NO softDeletes — invoice void hota hai, delete nahi (legal record)
+index (status, due_at), index (user_id, status)
+
+// ── invoice_items ────────────────────────────────────────────────────────
+id                  bigIncrements
+invoice_id          foreignId  index constrained('invoices') cascadeOnDelete
+kind                string(20)                   // plan|addon|proration|discount|tax|credit
+description         string(190)
+plan_id             foreignId  nullable constrained('plans') nullOnDelete
+quantity            unsignedInteger default 1
+unit_amount_minor   unsignedBigInteger
+amount_minor        unsignedBigInteger
+period_start        timestamp nullable
+period_end          timestamp nullable
+metadata            json        nullable
+
+// ── payments ─────────────────────────────────────────────────────────────
+id                  bigIncrements
+invoice_id          foreignId  index constrained('invoices') cascadeOnDelete
+method              string(20)                   // manual_trx|easypaisa|jazzcash|card|bank_transfer
+gateway             string(30)  nullable         // easypaisa|jazzcash|stripe|null (Phase 1: null)
+status              string(20)  index default 'pending'
+                                                // pending|awaiting_verification|verified|rejected|refunded|failed
+amount_minor        unsignedBigInteger
+currency            char(3) default 'PKR'
+reference           string(120) nullable  index  // TRX ID / gateway txn id
+gateway_payload     json        nullable
+submitted_by        foreignId  nullable constrained('users') nullOnDelete
+verified_by         foreignId  nullable constrained('users') nullOnDelete
+verified_at         timestamp nullable
+rejection_reason    string(190) nullable
+paid_at             timestamp nullable
+unique (gateway, reference)
+// MySQL mein NULL duplicate allowed hai, is liye Phase 1 (gateway null) par bhi chalta hai.
+// Do dafa same TRX ID = replay attempt → DB reject karega, app 409 de.
+index (status, created_at)
+
+// ── product_oauth_clients ────────────────────────────────────────────────
+// Passport `oauth_clients` ke saath linkage. Passport install NAHI hai (NOT VERIFIED).
+id                  bigIncrements
+product_id          foreignId  constrained('products') cascadeOnDelete
+oauth_client_id     string(64)  unique           // Passport client id — TYPE NOT VERIFIED
+name                string(120)
+redirect_uris       json                         // must include '<domain>/auth/kb/callback'
+post_logout_uris    json        nullable
+pkce_required       boolean default true
+scopes              json        nullable        // ['openid','profile','email','subscriptions:read']
+is_first_party      boolean default false
+secret_last4        string(4)   nullable        // full secret kabhi store nahi
+status              string(20)  default 'active'  // active|rotated|revoked
+last_used_at        timestamp nullable
+index (product_id, status)
+// Passport v12+ client id UUID (string) hai, v11 bigint. `string(64)` dono ko hold karta hai —
+// is liye version decide hone tak yeh safe choice hai.
+
+// ── webhook_endpoints ────────────────────────────────────────────────────
+id                  bigIncrements
+product_id          foreignId  constrained('products') cascadeOnDelete
+url                 string(190)                  // https only (app-level validate)
+secret              string(190)                  // 'encrypted' cast — HMAC signing key
+events              json                         // ['subscription.*','invoice.paid'] ya ['*']
+description         string(190) nullable
+is_active           boolean default true
+failure_count       unsignedInteger default 0
+disabled_at         timestamp nullable           // auto-disable after N consecutive failures
+last_success_at     timestamp nullable
+last_failure_at     timestamp nullable
+index (product_id, is_active)
+
+// ── webhook_deliveries ───────────────────────────────────────────────────
+id                  bigIncrements
+public_id           char(26)  unique            // ULID → X-KB-Event-Id header (product idempotency)
+webhook_endpoint_id foreignId  index constrained('webhook_endpoints') cascadeOnDelete
+event               string(60)  index
+payload             json
+status              string(20)  index default 'pending'  // pending|delivered|failed|dead
+attempts            unsignedSmallInteger default 0
+response_code       unsignedSmallInteger nullable
+response_body       text        nullable        // 4KB truncate
+duration_ms         unsignedInteger nullable
+next_retry_at       timestamp nullable  index
+delivered_at        timestamp nullable
+index (status, next_retry_at)
+// Retention: 30 din (prune command). `webhook_deliveries` = CP ka outbox;
+// product side ka `webhook_events` (02 §5.1) inbound dedupe hai — alag cheez.
+
+// ── kb_user_product_access ───────────────────────────────────────────────
+id                  bigIncrements
+user_id             foreignId  constrained('users') cascadeOnDelete
+product_id          foreignId  constrained('products') cascadeOnDelete
+role                string(30) default 'member'   // owner|admin|member|billing|viewer
+status              string(20) default 'active'   // active|invited|revoked
+granted_by          foreignId  nullable constrained('users') nullOnDelete
+granted_at          timestamp nullable
+revoked_at          timestamp nullable
+unique (user_id, product_id)
+index (product_id, status)
+```
+
+**Naam ka note:** `kb_user_product_access` aap ne diya, rakh diya. Magar is CP mein users `users` table mein hain (koi `kb_users` mirror nahi), is liye `user_product_access` zyada consistent hota. Naam badalna sirf ek word ka kaam hai — faisla aap ka.
+
+**`kb_user_product_access` vs `tenants_registry.owner_user_id`:** pehla "kaun product khol sakta hai / khareed sakta hai", doosra "kaun tenant ka owner hai". Dono lazmi hain — ek user kisi product ka access rakhta hai magar kisi tenant ka owner nahi ho sakta (e.g. billing contact), aur owner ka access revoke ho sakta hai baghair ownership badle.
+
+---
+
+## 2. Subscription state machine
+
+### 2.1 States
+
+| State | Access | `access_mode` | Kaun set karta hai |
+|---|---|---|---|
+| `trialing` | Full | `full` | Checkout (agar `trial_days > 0`) ya admin |
+| `active` | Full | `full` | Payment verified |
+| `grace` | Read-only + export | `read_only` | Scheduler (`period_end` cross) |
+| `past_due` | Read-only | `read_only` | Payment failure (Phase 2 auto-charge) |
+| `expired` | Locked (billing + export only) | `locked` | Scheduler (`grace_ends_at` cross) |
+| `cancelled` | Locked | `locked` | User (period end par) ya admin (foran) |
+| `suspended` | Blocked — login bhi nahi | `blocked` | Sirf admin |
+
+`access_mode` product ko batata hai UI kya dikhaye. Product apna faisla nahi karta — snapshot se padhta hai, warna 5 products 5 tarah ka behaviour banayenge.
+
+### 2.2 Transitions
+
+| From → To | Trigger | Actor | Side effects |
+|---|---|---|---|
+| `∅ → trialing` | checkout, `trial_days > 0` | user | invoice (0 amount) optional, `trial_started`, webhook `subscription.created` |
+| `∅ → active` | payment verified | payment event | period set, `activated`, webhook `subscription.created` |
+| `trialing → active` | payment verified | payment event | `trial_ends_at` null, period reset |
+| `trialing → grace` | `trial_ends_at` cross | scheduler | `entered_grace`, `grace_ends_at = now + grace_days`, webhook `subscription.grace` |
+| `trialing → cancelled` | user cancels | user | `cancelled_at`, access foran band (trial mein kuch pay nahi kiya) |
+| `active → grace` | `period_end` cross, koi payment nahi | scheduler | `entered_grace`, webhook `subscription.grace` |
+| `active → past_due` | auto-charge fail | payment event | sirf Phase 2; Phase 1 mein yeh state reachable nahi |
+| `active → active` | renewal verified | payment event | `period_start/end` shift, `renewed`, webhook `subscription.renewed` |
+| `active → cancelled` | `cancel_at_period_end` set + `period_end` cross | scheduler | access `period_end` tak full rehta hai |
+| `active → cancelled` | admin immediate cancel | admin | `cancelled_at = now`, access foran `locked`, audit + `security_events` |
+| `active → suspended` | abuse / fraud | admin | handoff refuse, resolve `blocked` |
+| `grace → active` | payment verified | payment event | grace clear, naya period |
+| `grace → expired` | `grace_ends_at` cross | scheduler | `expired`, webhook `subscription.expired` |
+| `grace → cancelled` | user cancels | user | — |
+| `past_due → active` | payment verified | payment event | — |
+| `past_due → grace` | dunning exhaust | scheduler | — |
+| `past_due → suspended` | admin | admin | — |
+| `expired → active` | payment verified | payment event | `reactivated`, naya period `now` se |
+| `expired → cancelled` | user / admin | user, admin | — |
+| `cancelled → active` | payment verified | payment event | `reactivated`; wahi row reuse hoti hai |
+| `suspended → active` | admin resume | admin | `resumed` |
+| `suspended → cancelled` | admin | admin | — |
+
+**Har transition `subscription_events` mein ek row likhta hai** (`from_status`, `to_status`, `actor_type`, `data`). Koi bhi state change baghair event ke nahi — yeh invariant hai, is liye state machine ek hi service (`SubscriptionStateMachine::transition()`) se guzarta hai, controllers se nahi.
+
+**`02` §1.2 se ek deviation:** wahan step 7 `period_end` cross par `status=grace` set karke `subscription.expired` webhook bhejta hai. Design yahan do events mein torta hai — `subscription.grace` (grace entry) aur `subscription.expired` (grace khatam). Wajah: product ko "read-only ho jao" aur "ab band ho jao" alag alag batane padte hain, warna `expired` ka matlab do cheezein ho jata hai. Backward compat ke liye product `subscription.expired` par bhi read-only mode laga sakta hai — behaviour same rehta hai, sirf semantics saaf hoti hain.
+
+### 2.3 Scheduler (single source of truth)
+
+Ek command, har 10 minute:
+
+```php
+// subscriptions:tick
+// 1. trialing/active WHERE current_period_end <= now → grace  (grace_ends_at = now + plan.grace_days)
+// 2. grace        WHERE grace_ends_at      <= now → expired
+// 3. active       WHERE cancel_at_period_end AND current_period_end <= now → cancelled
+// 4. webhook_deliveries WHERE status='pending' AND next_retry_at <= now → retry
+```
+
+Idempotency: har query `WHERE status = '<expected>'` ke saath chalti hai, is liye do workers aik hi row par race karein to sirf ek `UPDATE` affect karta hai (affected rows = 1). Double webhook nahi jayega.
+
+**Grace ke andar writes:** `grace` aur `past_due` = read-only. Product `access_mode: read_only` par naye records block karta hai, magar read + export + payment allow. `expired`/`cancelled` = `locked` (billing + export only). `suspended` = `blocked` (handoff refuse hota hai, `02` §5.4.1 rule 5).
+
+---
+
+## 3. Entitlement resolution
+
+### 3.1 Inputs aur precedence
+
+| # | Input | Kya deta hai | Precedence |
+|---|---|---|---|
+| 1 | `plan_entitlements` | key, value, unit, reset | base — jo plan grant karta hai |
+| 2 | `product_features` | `type`, `unit`, `reset_period`, `default_value` | **typing jeet jati hai** — plan row ka `type` sirf fallback |
+| 3 | `product_modules` | `status`, `removed_at` | module removed → key drop (§6) |
+| 4 | `plans.seat_limit` + `subscriptions.seats` | effective seats | `min()` |
+| 5 | `subscriptions.status` | `access_mode` | §2.1 table |
+
+Rule: `type` **product_features** se aata hai jab `product_feature_id` maujood ho. Wajah: plan editor ghalti se `warehouses` ko `flag` bana de to resolution nahi badalni chahiye — catalog sach hai.
+
+### 3.2 Algorithm
+
+```
+1. entitlements = plan_entitlements(plan_id) keyed by `key`
+2. for each row:
+     type  = product_features[row.product_feature_id].type ?? row.type
+     unit  = product_features[..].unit ?? row.unit
+     if type == 'flag'  → flags[key]  = value in ('1','true')
+     if type == 'limit' → limits[key] = value === '-1' ? null : int(value)
+     if type == 'quota' → quotas[key] = { limit: int, unit, reset }
+3. limits['seats'] = min(plans.seat_limit ?? PHP_INT_MAX, subscriptions.seats)
+4. for each module of product:
+     modules[key] = module.status   // active | deprecated | removed
+     if module.status == 'removed' AND module.removed_at <= subscription.current_period_start:
+         drop every flag/limit/quota whose key starts with "{module.key}."
+5. access_mode = map(subscription.status)          // §2.1
+6. version    = subscriptions.entitlements_version
+7. hash       = sha256(canonical_json(payload_without_generated_at))
+```
+
+Step 4 ka exact matlab: **removed module un subscriptions ko nahi marti jinka current period module removal se pehle shuru hua tha.** Woh period_end tak chalti hain, next renewal par key gayab ho jati hai. Yeh "grandfather" rule hai (§6).
+
+### 3.3 Snapshot shape
+
+```json
+{
+  "schema": 1,
+  "product_key": "mizaan",
+  "tenant_id": "01JQ8Z3K7M4X2V9B5N1C6D0RTA",
+  "status": "active",
+  "access_mode": "full",
+  "plan": { "key": "growth", "tier": 2, "interval": "month", "amount_minor": 1500000, "currency": "PKR" },
+  "period": { "start": "2026-11-01T00:00:00Z", "end": "2026-12-01T00:00:00Z",
+              "grace_ends_at": null, "cancel_at_period_end": false },
+  "flags":  { "accounting.invoices": true, "inventory.multi_warehouse": true },
+  "limits": { "seats": 25, "warehouses": 3 },
+  "quotas": { "api.calls": { "limit": 50000, "unit": "calls", "reset": "month" } },
+  "modules": { "accounting": "active", "inventory": "active", "payroll": "removed" },
+  "version": 7
+}
+```
+
+Flat `flags` / `limits` / `quotas` maps — teen alag maps isliye ke client ko `typeof` check nahi karna padta. `limits` mein `null` = unlimited (JSON `-1` nahi, kyunke `-1` ko client ghalti se "1 se kam" samajh sakta hai).
+
+`entitlements_hash` payload ka `generated_at` **shamil nahi** karta (warna har request par hash badal jaye). Hash ka input: upar wala poora object minus `version` — `version` integer monotonic hai, hash content-addressed hona chahiye. Canonical JSON = recursive `ksort` + `JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE` + no whitespace.
+
+### 3.4 Cache
+
+| Key | Value | TTL | Invalidate |
+|---|---|---|---|
+| `kb:ent:{tenant_id}` | poora snapshot JSON | 300s | har subscription write (plan/status/seats) |
+| `kb:ent:{tenant_id}:v` | `entitlements_version` | 3600s | same |
+| `kb:plan:{plan_id}` | plan + prices + entitlements array | 3600s | plan/price/entitlement save |
+| `kb:resolve:{tenant_id}:neg` | `blocked` / `unknown` marker | 30s | tenant activate |
+| `kb:store:{product_id}` | storefront product+plans (public) | 600s | product/plan save |
+
+**TTL safety net hai, mechanism nahi.** Asli invalidation active hai: subscription write → `entitlements_version++` → `Cache::forget("kb:ent:{tenant}")` → webhook dispatch, sab ek DB transaction ke baad (transaction ke andar cache forget nahi, warna rollback par stale cache reh jata hai).
+
+**`If-None-Match` / 304:** `GET /api/v1/subscriptions/resolve` `ETag: W/"{hash}"` bhejta hai. Product wahi hash bheje to 304 (body nahi). Yeh `02` §1.2 step 9 ka mechanism hai.
+
+**Bulk rehash:** `plan_entitlements` badalne par us plan ke saare subscriptions ka hash badalna hota hai. `subscriptions:rehash --plan={id}` queue job — chunked 500, `entitlements_version++`, cache forget. Webhook **nahi** bhejta (product agle resolve par khud utha lega); sirf `subscription.entitlements_changed` bhejta hai agar `notify` flag ho.
+
+---
+
+## 4. Admin panel
+
+**Naya module:** `app/Modules/Platform/` — bilkul `app/Modules/Settings/` ke pattern par (`routes.php`, `menu.php`, `Http/Controllers`, `Http/Requests`, `Http/Resources`). Menu `order => 20` (Settings 80 se pehle), `prefix => '/platform'`, `key => 'platform'`.
+
+Har list screen: `TableQuery::json($query, $request, [...], XxxRow::class)` + `useServerList` + `ListView` + `/data` endpoint. Har form: `FormPage` + `FormCard` + `FormSection` + `FormGrid` + `Field`. Har mutation: `Audit::log()` + redirect/`back()` with flash.
+
+### 4.1 Screens
+
+| # | Screen | Path | Permission | Reused components |
+|---|---|---|---|---|
+| 1 | Products list | `/platform/products` | `platform.products.view` | `ListPage`, `ListView`, `useServerList`, `StatusBadge` |
+| 2 | Product form | `/platform/products/create`, `/platform/products/{product}` | `.create` / `.update` | `FormPage`, `FormCard`, `FormSection`, `FormGrid`, `Field`, `Input`, `Select` |
+| 3 | Modules list | `/platform/products/{product}/modules` | `platform.modules.view` | `ListPage`, `ListView`, `RowAction`, `StatusBadge` |
+| 4 | Module form | `/platform/products/{product}/modules/{module}` | `platform.modules.update` | `FormPage`, `FormSection` |
+| 5 | Features list + form | `/platform/products/{product}/features` | `platform.features.view` | `ListPage`, `ListView`, `Modal` (inline edit) |
+| 6 | Doctypes list + form | `/platform/products/{product}/doctypes` | `platform.doctypes.view` | `ListPage`, `ListView`, `DocStatusBadge` |
+| 7 | Reports list + form | `/platform/products/{product}/reports` | `platform.reports.view` | `ListPage`, `ListView` |
+| 8 | Plans list | `/platform/plans` | `platform.plans.view` | `ListPage`, `ListView` (filter: product, status) |
+| 9 | Plan form | `/platform/plans/create`, `/platform/plans/{plan}` | `.create` / `.update` | `FormPage`, `FormSection`, `LineItems` (prices grid) |
+| 10 | Plan entitlements | `/platform/plans/{plan}/entitlements` | `platform.plans.entitlements` | `FormPage` + `PermissionMatrix` (flags) + `Input` grid (limits/quotas) |
+| 11 | Subscriptions list | `/platform/subscriptions` | `platform.subscriptions.view` | `ListPage`, `ListView` (filters: status, product, period) |
+| 12 | Subscription detail | `/platform/subscriptions/{subscription}` | `.view` | `Page`, `SubNav` (Overview/Events/Invoices), `ReadField`, `DocumentActivity` (event timeline) |
+| 13 | Subscription actions | `POST .../activate`, `/suspend`, `/resume`, `/cancel`, `/renew`, `/change-plan` | `.update` | `Modal`, `ConfirmDialog`, `Select` |
+| 14 | Invoices list | `/platform/invoices` | `platform.invoices.view` | `ListPage`, `ListView` |
+| 15 | Invoice detail / print | `/platform/invoices/{invoice}` | `.view` | `ReportPage`, `ReportGrid`, `ReadField` |
+| 16 | Manual invoice | `/platform/invoices/create` | `platform.invoices.create` | `FormPage`, `LineItems` |
+| 17 | Payments list | `/platform/payments` | `platform.payments.view` | `ListPage`, `ListView` |
+| 18 | **TRX verification queue** | `/platform/payments/queue` | `platform.payments.verify` | `ListPage`, `ListView`, `RowAction`, `ConfirmDialog`, `Modal` (reject reason) |
+| 19 | Tenants overview | `/platform/tenants` | `platform.tenants.view` | `ListPage`, `ListView` (filters: product, status, owner) |
+| 20 | Tenant detail | `/platform/tenants/{tenant}` | `.view` | `Page`, `SubNav`, `ReadField` |
+| 21 | OAuth clients | `/platform/oauth-clients` | `platform.oauth_clients.view` | `ListPage`, `ListView`, `Modal` (secret shown once) |
+| 22 | OAuth client form | `/platform/oauth-clients/{client}` | `.update` | `FormPage`, `FormSection` |
+| 23 | Webhook endpoints | `/platform/webhooks` | `platform.webhooks.view` | `ListPage`, `ListView` |
+| 24 | Webhook deliveries | `/platform/webhooks/{endpoint}/deliveries` | `.view` | `ListPage`, `ListView`, `Modal` (payload + response) |
+| 25 | Users + product access | `/platform/users` | `platform.users.view` | `ListPage`, `ListView`, `Select` (role inline) |
+| 26 | User product access | `/platform/users/{user}` | `.update` | `Page`, `SubNav`, `ListView` |
+| 27 | Overview / KPIs | `/platform` | `platform.dashboard.view` | `Page`, `ReportGrid`, `ReportPage` |
+| 28 | Storefront settings | `/platform/storefront` | `platform.storefront.update` | `SettingsPage`, `FormSection` |
+
+### 4.2 Route registration (Settings pattern)
+
+```php
+Route::prefix('platform')->group(function () {
+    Route::middleware('can:platform.products.view')->group(function () {
+        Route::get('products', [ProductController::class, 'index']);
+        Route::get('products/data', [ProductController::class, 'data']);
+    });
+    Route::middleware('can:platform.products.update')->group(function () {
+        Route::get('products/{product}', [ProductController::class, 'edit'])->whereNumber('product');
+        Route::put('products/{product}', [ProductController::class, 'update'])->whereNumber('product');
+        Route::post('products/{product}/manifest/sync', [ProductController::class, 'syncManifest']);
+    });
+    // ... baaqi screens isi shape par
+});
+```
+
+### 4.3 Permission keys
+
+`PermissionCatalog` `Permission::all()` se tree banata hai (`platform.products.view` → group `platform`, row `platform.products`, action `view`) — is liye keys **do segments + action** honi chahiye, warna `PermissionMatrix` grid toot jata hai.
+
+```
+platform.products.{view,create,update,delete}
+platform.modules.{view,update}
+platform.features.{view,create,update,delete}
+platform.doctypes.{view,create,update,delete}
+platform.reports.{view,create,update,delete}
+platform.plans.{view,create,update,delete,entitlements}
+platform.subscriptions.{view,create,update,cancel,suspend}
+platform.invoices.{view,create,update,void}
+platform.payments.{view,verify,refund}
+platform.tenants.{view,update,suspend}
+platform.oauth_clients.{view,create,update,rotate}
+platform.webhooks.{view,create,update,test}
+platform.users.{view,update}
+platform.storefront.{view,update}
+platform.dashboard.view
+```
+
+`platform.subscriptions.update` "activate/renew/change-plan" cover karta hai; `cancel` aur `suspend` alag hain kyunke yeh destructive hain aur `Authority::missing()` cross-check ke liye alag key chahiye.
+
+### 4.4 `menu.php` skeleton
+
+```php
+return [
+    'key' => 'platform', 'label' => 'Platform', 'prefix' => '/platform',
+    'order' => 20, 'icon' => 'layers',
+    'permissions' => [ /* §4.3 ki destructive keys */ ],
+    'sections' => [
+        ['title' => 'Catalog', 'items' => [
+            ['label' => 'Products', 'href' => '/platform/products', 'can' => 'platform.products.view'],
+            ['label' => 'Plans',    'href' => '/platform/plans',    'can' => 'platform.plans.view'],
+        ]],
+        ['title' => 'Billing', 'items' => [
+            ['label' => 'Subscriptions',   'href' => '/platform/subscriptions',  'can' => 'platform.subscriptions.view'],
+            ['label' => 'Invoices',        'href' => '/platform/invoices',       'can' => 'platform.invoices.view'],
+            ['label' => 'TRX Queue',       'href' => '/platform/payments/queue', 'can' => 'platform.payments.verify'],
+        ]],
+        ['title' => 'Tenancy', 'items' => [
+            ['label' => 'Tenants', 'href' => '/platform/tenants', 'can' => 'platform.tenants.view'],
+        ]],
+        ['title' => 'Integrations', 'items' => [
+            ['label' => 'OAuth Clients',     'href' => '/platform/oauth-clients', 'can' => 'platform.oauth_clients.view'],
+            ['label' => 'Webhook Endpoints', 'href' => '/platform/webhooks',      'can' => 'platform.webhooks.view'],
+        ]],
+        ['title' => 'Access', 'items' => [
+            ['label' => 'Users', 'href' => '/platform/users', 'can' => 'platform.users.view'],
+        ]],
+    ],
+];
+```
+
+### 4.5 Reuse honesty
+
+`PermissionMatrix` ka contract `key.action` hai (`groups → rows → actions`). Flags usi shape mein hain, **limits/quotas nahi** (unhein value chahiye). Is liye §4.1 #10 do hisson mein hai: flags ke liye `PermissionMatrix` (readonly=false, model = granted flag keys), limits/quotas ke liye `FormSection` + `Input type=number` ka plain grid. `PermissionMatrix` ko force karna ghalat abstraction hota.
+
+`DocumentActivity` `subscription_events` ke liye reuse ho jata hai — dono `{type, actor, at, meta}` feed hain. Agar props mismatch nikle to `SubscriptionTimeline.vue` package mein add karna behtar hai (product ko bhi chahiye).
+
+---
+
+## 5. Public storefront
+
+### 5.1 Rendering decision (important)
+
+**Inertia SSR enabled nahi hai** — `package.json` mein `@inertiajs/ssr` nahi, `resources/js/app.js` client-only (`createInertiaApp`). Inertia baghair SSR ke HTML shell bhejta hai; crawler ko product/plan content nahi milta.
+
+**Is liye storefront = Blade, admin/app = Inertia.** Yeh split jaan boojh kar hai:
+
+| Surface | Renderer | Kyun |
+|---|---|---|
+| `/`, `/products/*`, `/pricing`, legal pages | **Blade** | SEO: server HTML, meta tags, JSON-LD, sitemap |
+| `/checkout/*` | **Blade + Alpine-free plain JS** | Payment forms par JS dependency kam rakhein |
+| `/login`, `/register`, `/password/*` | **Inertia** (already maujood `Auth/Login.vue`) | App shell, 3D login scene |
+| `/platform/*`, `/settings/*` | Inertia | Internal, SEO irrelevant |
+
+Blade views `resources/views/storefront/` mein; layout `resources/views/storefront/layout.blade.php` (Tailwind same build se, `@vite(['resources/css/app.css'])`).
+
+### 5.2 Pages + route names
+
+| Route name | Path | Auth | Kaam |
+|---|---|---|---|
+| `storefront.home` | `/` | guest | Products grid + trust signals |
+| `storefront.pricing` | `/pricing` | guest | Saare public plans, product-wise |
+| `storefront.product` | `/products/{product:key}` | guest | Product detail, modules/features list |
+| `storefront.product.pricing` | `/products/{product:key}/pricing` | guest | Us product ke plans, monthly/yearly toggle |
+| `storefront.legal.terms` | `/terms` | guest | — |
+| `storefront.legal.privacy` | `/privacy` | guest | — |
+| `storefront.legal.refund` | `/refund-policy` | guest | Manual TRX ke liye lazmi |
+| `storefront.contact` | `/contact` | guest | — |
+| `checkout.start` | `POST /checkout` | auth | Plan + slug → invoice draft |
+| `checkout.show` | `/checkout/{invoice:number}` | auth | Order summary + billing form |
+| `checkout.pay` | `/checkout/{invoice:number}/pay` | auth | Phase 1: TRX ID form |
+| `checkout.status` | `/checkout/{invoice:number}/status` | auth | "Verification pending" + polling |
+| `checkout.open` | `/products/{product:key}/open` | auth | OAuth kickoff (`02` §1.2 step 5) |
+
+`{product:key}` route binding — URLs mein `mizaan`, id nahi. `{invoice:number}` bhi same wajah.
+
+### 5.3 Guest purchase flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Visitor
+    participant S as Storefront (Blade)
+    participant CP as CP (auth + checkout)
+    participant AD as Admin
+    participant P as Product app
+
+    U->>S: GET /products/mizaan/pricing
+    S-->>U: plans (public only), monthly/yearly
+    U->>CP: click "Subscribe" -> POST /checkout
+    alt not logged in
+        CP-->>U: 302 /login (intended = /checkout/...)
+        U->>CP: login ya register
+        CP-->>U: 302 intended
+    end
+    CP->>CP: tenant slug suggest + reserved check
+    U->>CP: POST /checkout {plan, slug, billing name/email}
+    CP->>CP: invoice (open) + payment (manual_trx, pending) — idempotency_key
+    CP-->>U: 302 /checkout/{number}/pay
+    U->>CP: POST TRX ID + screenshot
+    CP->>CP: payment -> awaiting_verification
+    CP-->>U: 302 /checkout/{number}/status
+    AD->>CP: verify (TRX queue)
+    CP->>CP: payment verified -> invoice paid -> subscription active
+    CP->>CP: tenant registry row (provisioning) + entitlements hash
+    CP->>P: POST provision (tenant create) — HMAC
+    P-->>CP: 201 kb_tenant_id
+    CP->>CP: registry active + webhook subscription.created
+    CP-->>U: email "Open product" (signed, 24h)
+    U->>CP: GET /products/mizaan/open
+    CP-->>U: 302 /oauth/authorize (PKCE)
+```
+
+**Guest ke liye "register" = email + password + name.** Yeh CP ka primary auth hai — D5 ka break-glass flag **product skeleton** par lagta hai, CP par nahi. CP identity hub hai; yahan password login normal hai, warna koi customer hi login nahi kar sakta. D5 ka matlab yeh hai ke *product app* apna local login na khole.
+
+**Slug rules:** auto-suggest product name se (`Str::slug`), reserved list (D3) + `unique(product_id, slug)` + `unique(subdomain)` check, live availability endpoint `GET /api/v1/tenants/slug-check?slug=`. Slug ek dafa confirm ho to `subscriptions`/`tenants_registry` active hone tak lock.
+
+**Failure paths:** TRX reject → payment `rejected` + reason email + invoice `open` rehta hai (dobara submit ho sakta hai). 7 din tak unpaid → invoice `uncollectible`, registry `archived`, slug release.
+
+### 5.4 SEO
+
+| Cheez | Kaise |
+|---|---|
+| `<title>`, `<meta description>` | Blade `@section`, per-page |
+| Canonical | `https://{cp-domain}/products/{key}` — query strings (`?interval=year`) canonical se strip |
+| Open Graph / Twitter | `og:title`, `og:description`, `og:image` (`logo_path` se 1200×630 generated — **NOT VERIFIED**, image pipeline maujood nahi) |
+| JSON-LD | `Product` + `Offer` per plan price, `AggregateOffer` pricing page par. `priceCurrency: "PKR"`, `price` major units (schema.org decimal, minor nahi) |
+| `sitemap.xml` | `GET /sitemap.xml` — active products + public plans + legal pages; `lastmod` = `products.updated_at` |
+| `robots.txt` | `Disallow: /platform, /checkout, /settings, /login, /register`; `Sitemap:` line |
+| Pricing crawlability | Blade SSR + **koi auth gate nahi** + prices HTML mein (JS toggle sirf display badle, dono prices markup mein hon) |
+| Hreflang | Filhaal nahi (single locale `en`). Phase 2 |
+
+**`Cache-Control`:** storefront pages `public, max-age=600` + `ETag` from `kb:store:{product_id}` hash. `/checkout/*` aur `/platform/*` par `no-store` lazmi (invoice numbers URL mein hain).
+
+---
+
+## 6. Manifest sync (`kb-product.json` → catalog)
+
+### 6.1 Shape
+
+Product repo root par `kb-product.json`, `php artisan khattakbits:manifest` se generate (**command maujood nahi — banana hai**):
+
+```json
+{
+  "schema": 1,
+  "key": "mizaan",
+  "name": "Mizaan ERP",
+  "version": "1.4.2",
+  "min_starter_version": "1.4.0",
+  "modules": [
+    { "key": "accounting", "name": "Accounting", "is_core": true,
+      "features": [
+        { "key": "accounting.invoices", "name": "Invoices", "type": "flag" },
+        { "key": "accounting.periods",  "name": "Periods",  "type": "limit", "unit": "count" }
+      ],
+      "doctypes": [
+        { "type": "invoice", "label": "Invoice", "model": "App\\Modules\\Accounting\\Models\\Invoice",
+          "permission_prefix": "accounting.invoices", "url": "/accounting/invoices",
+          "actions": ["view", "create", "update", "delete", "submit", "cancel"] }
+      ],
+      "reports": [
+        { "key": "accounting.trial_balance", "name": "Trial Balance", "route": "/reports/trial-balance" }
+      ]
+    }
+  ],
+  "checksum": "sha256:..."
+}
+```
+
+### 6.2 Push mechanism
+
+`POST /api/v1/products/{key}/manifest`
+
+| Header | Value |
+|---|---|
+| `X-KB-Signature` | `t={ts},v1=HMAC_SHA256(secret, "{ts}.{raw_body}")` |
+| `X-KB-Product` | `mizaan` |
+| `Content-Type` | `application/json` |
+
+- Secret per product (`products` ke saath store, `encrypted` cast) — webhook secret se **alag** key, kyunke blast radius alag hai (manifest write vs event read).
+- Timestamp 300s window (replay protection) — same rule jo webhook receiver par hai.
+- Idempotency: `products.manifest_hash` compare; same → `200 {applied:false, warnings:[]}`.
+- Validation fail → `422` with `errors[]`, **kuch apply nahi hota** (all-or-nothing transaction).
+
+### 6.3 Diff rules
+
+| Manifest | DB | Action |
+|---|---|---|
+| Module present | absent | `INSERT status=active` |
+| Module present | present | `UPDATE name/description/is_core` only |
+| Module present, `status=removed` | present | `status=active`, `removed_at=null` (module wapas aya) |
+| Module **absent** | present | `status=removed`, `removed_at=now()` — **DELETE NAHI** |
+| Feature/doctype/report absent | present | `status=removed` (same rule) |
+| Doctype `permission_prefix` changed | — | warning + apply (permission rename product ka kaam hai) |
+
+Hard delete kabhi nahi — `plan_entitlements.product_feature_id` FK aur audit history toot jati hai. Prune alag command se, 90 din baad, sirf jab koi reference na ho.
+
+### 6.4 Module removed magar active subscriptions reference karte hain
+
+Yeh sab se aam real case hai (product ne payroll hata diya, 40 tenants ne pay kiya hua hai). Rule:
+
+1. `product_modules.status = 'removed'`, `removed_at = now()`. Row zinda hai.
+2. **`plan_entitlements` rows touch nahi hoti.** Existing plans apni keys rakhte hain — warna renewal par price same rehta aur value gayab ho jati (billing mismatch).
+3. **Resolution grandfather karti hai** (§3.2 step 4): key sirf un subscriptions se drop hoti hai jinka `current_period_start >= removed_at`. Purane period wale tenants `period_end` tak chalta rakhte hain.
+4. Snapshot mein `modules.payroll = "removed"` aata hai — product UI "sunset" badge dikha sakta hai, feature band karne ka faisla product ka.
+5. **New sales block:** plan editor removed module ki key add karne par `422` deta hai; storefront se removed module wale plan hide (`plans.is_public` auto-false **nahi** — sirf warning, kyunke plan mein doosre modules bhi hain).
+6. **Admin alert:** `/platform/products/{product}` par banner — "3 plans, 40 subscriptions reference removed module `payroll`". Query `subscription_events` + `plan_entitlements` se.
+7. **Deprecation window:** pehle `deprecated` (kaam karta hai, UI badge "sunset in N days"), 90 din baad `removed`. Do-step isliye ke ek din mein module hatana tenants ko bina warning todta hai.
+8. **Prune:** `platform:prune-modules --product={key}` — sirf woh rows jo `removed` hain, 90 din purani hain, aur zero `plan_entitlements` + zero active subscription reference karti hain.
+
+---
+
+## 7. Build order
+
+**Scope note:** `stancl/tenancy` **is CP mein nahi** — multi-DB tenancy product apps mein hai (`02` §5). CP single DB hai. Is liye yahan koi `tenants:migrate`, tenant connection, ya domain resolver ka kaam nahi. CP sirf product ko `POST /provision` call karta hai aur `kb_tenant_id` wapas leta hai — woh integration point S3 mein hai, tenancy implementation nahi.
+
+| Sprint | Kaam | Effort | Dependency |
+|---|---|---|---|
+| **S0** | MySQL confirm + `security_events` (core) + Passport install/config + `khattakbits:manifest` command skeleton | 2d | — |
+| **S1** | Catalog: `products`, `product_modules`, `product_features`, `product_doctypes`, `product_reports` + admin screens 1–7 + manifest sync (§6) | 6d | S0 |
+| **S2** | Plans + entitlements: `plans`, `plan_prices`, `plan_entitlements`, resolver + hash + cache (§3), `EntitlementSet` contract in core, admin screens 8–10 | 6d | S1 |
+| **S3** | Tenancy + subscription core: `tenants_registry`, `subscriptions`, `subscription_events`, state machine (§2), scheduler command, provisioning client, admin screens 11–13, 19–20 | 7d | S2 |
+| **S4** | Billing: `invoices`, `invoice_items`, `payments`, TRX queue + verification, `Naming` invoice series, admin screens 14–18 | 6d | S3 |
+| **S5** | Storefront: Blade layout + 8 pages + SEO (§5.4) + checkout flow + transactional emails | 6d | S2 (prices), S4 (pay) |
+| **S6** | OAuth: Passport clients, `product_oauth_clients`, `/oauth/userinfo`, `GET /api/v1/subscriptions/resolve` (ETag/304), `/api/v1/subscriptions/renew-link`, admin screens 21–22 | 5d | S3 |
+| **S7** | Webhooks: `webhook_endpoints`, `webhook_deliveries`, HMAC signing, retries + backoff, dead-letter, admin screens 23–24 | 4d | S3 |
+| **S8** | Access + polish: `kb_user_product_access`, screens 25–28, KPI dashboard, `platform:rehash` command | 4d | S4 |
+| **S9** | Hardening: rate limits, audit coverage, feature tests, seeders (demo product + 3 plans), docs | 5d | all |
+
+**Total ≈ 51 days ≈ 10 hafte solo; 2 devs par ~5.5 hafte** (S5/S6/S7 parallel ho sakte hain, S1→S2→S3 sequential hai).
+
+**Critical path:** S1 → S2 → S3 → S4 → S6. S5 S2 ke baad shuru ho sakta hai (prices mil jate hain), magar checkout ka "pay" step S4 par depend karta hai — is liye S5 ko do hisson mein torta hoon: pages+SEO (S2 ke baad) aur checkout (S4 ke baad).
+
+**Phase 1 vs Phase 2:**
+- Phase 1 (S0–S9): manual TRX only. `payments.gateway = null`, `method = manual_trx`, admin verification queue.
+- Phase 2: gateway APIs (EasyPaisa/JazzCash/card) — `payments` schema already ready (`gateway`, `gateway_payload`, `unique(gateway, reference)`), sirf callback controller + signature verify + `past_due` transitions chahiye. ~8d.
+
+---
+
+## 8. Open questions
+
+1. **`plans.billing_mode = per_seat`** — seats ka source kya hai? CP ko product se `seats.used` chahiye (resolve response mein `used` field hai, magar bharta kaun hai?). Do options: product push kare (`POST /api/v1/usage`), ya CP resolve par hi product ke `kb_user_tenant` count ko trust kare. Pehla saaf hai magar naya endpoint.
+2. **`security_events` retention** — `02` §6 mein already open hai (90 din vs 1 saal). CP ke liye yeh billing/fraud investigation se jur jata hai, is liye 1 saal recommend karta hoon.
+3. **Organization (multi-product buyer)** — aaj `tenants_registry` per (product, tenant) row hai, is liye ek company jo 2 products le, uski 2 alag tenant identities hongi. Agar "one company, one bill, 2 products" chahiye to `organizations` table chahiye (aur `invoices.organization_id`). Abhi scope se bahar rakha.
+4. **Refund policy enforcement** — `payments.status = refunded` schema mein hai magar `subscriptions` par iska asar define nahi (refund → cancel? → grace?). Business rule aap ka.
+
+---
+
+*Yeh document design hai, implementation nahi. Har schema snippet migration-ready hai magar migration file nahi hai. Jo cheez verify nahi ho saki woh NOT VERIFIED mark hai: MySQL server version, Passport install/version, `security_events` existence, `@inertiajs/ssr`, OG image pipeline, `khattakbits:manifest` command.*
