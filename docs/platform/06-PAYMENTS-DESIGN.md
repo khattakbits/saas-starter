@@ -12,12 +12,12 @@
 
 ### 0.1 Inherited constraints (04 §0 se, dobara nahi likhein)
 
-| Constraint | Payments par asar |
-|---|---|
-| MySQL 8.0+ target, tests SQLite `:memory:` | Koi partial/filtered unique index nahi, koi generated column nahi, koi `ENUM` nahi |
-| Money = integer **minor units** (paisa) | `amount_minor unsignedBigInteger`; gateway jo `12.5` bhejta hai usay `minor()` se convert karo, float kabhi nahi |
-| `ENUM` nahi | Status PHP backed enum + `string(20)` column |
-| Koi generated column nahi | "Normalized reference" ka unique index app-level column par banega (§2.3), DB expression par nahi |
+| Constraint                                 | Payments par asar                                                                                                |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| MySQL 8.0+ target, tests SQLite `:memory:` | Koi partial/filtered unique index nahi, koi generated column nahi, koi `ENUM` nahi                               |
+| Money = integer **minor units** (paisa)    | `amount_minor unsignedBigInteger`; gateway jo `12.5` bhejta hai usay `minor()` se convert karo, float kabhi nahi |
+| `ENUM` nahi                                | Status PHP backed enum + `string(20)` column                                                                     |
+| Koi generated column nahi                  | "Normalized reference" ka unique index app-level column par banega (§2.3), DB expression par nahi                |
 
 **Payments-specific teen naye constraints:**
 
@@ -27,60 +27,89 @@
 
 ### 0.2 Aaj kya maujood hai (verified)
 
-| Cheez | File | Payments ke liye kaam ka kya hissa |
-|---|---|---|
-| Settings store | `khattakbits-core/src/Support/SettingsStore.php` | `all()`, `get(key, default)`, `setMany(array)`. Flat key/value, cache `settings.all`, `Cache::forget` on write |
-| Settings table | `.../migrations/2026_10_27_070653_create_settings_table.php` | `key string(100)` PK, `value text nullable` — **plaintext, koi encryption nahi** |
-| Settings admin | `app/Modules/Settings/Http/Controllers/SystemController.php` | `show`/`update` + `Audit::log('settings.updated', ...)` + changed-keys diff — copy karne layak pattern |
-| Attachments | `AttachmentController`, `Models/Attachment`, `config/attachments.php`, `ui/FileAttachments.vue` | Polymorphic `attachable_type`/`attachable_id`, private disk `storage/app/private`, per-type permission keys, per-record `scope`, per-user daily quota |
-| Audit | `Support/Audit.php` | `Audit::log(string $event, ?Model $subject, ?string $label, array $meta)` + `Audit::changes($before, $after)` |
-| Audit event labels | `app/Modules/Settings/Http/Controllers/AuditLogController.php::EVENTS` | UI filter labels — naye events yahan add karne padenge |
-| Email templates | `Support/EmailTemplates.php`, `Mailer.php`, `Jobs/SendEmailJob.php` | `{{ token }}` placeholders, DB overrides, admin editor maujood, `$tries=3` `$backoff=[60,300]` |
-| Numbering | `Support/Naming.php` | `Naming::next(string $prefix, int $pad = 5)` → `PREFIX-00001`, `lockForUpdate` ke saath |
-| List/filter/sort | `Support/TableQuery.php` + `useServerList.js` + `ListView.vue` | `?f[key]=`, `?q=`, `?sort=&dir=`, cursor paginate, `total` sirf pehle page par |
-| Layout | `ListPage`, `FormPage`, `FormSection`, `FormGrid`, `Field`, `Input`, `Select`, `Modal`, `ConfirmDialog`, `StatusBadge`, `EmptyState`, `ReadField`, `ReportPage`, `ReportGrid` | Verification queue + checkout form inhi par banenge |
-| Permissions | `Support/PermissionCatalog.php` + `menu.php` + `PermissionSeeder` | `platform.payments.{view,verify,refund}` already 04 §4.3 mein declare hain |
-| Scheduler | `routes/console.php` (`Schedule::command('bin:purge')->dailyAt('03:00')`) | Naye commands yahan register honge |
+| Cheez              | File                                                                                                                                                                          | Payments ke liye kaam ka kya hissa                                                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Settings store     | `khattakbits-core/src/Support/SettingsStore.php`                                                                                                                              | `all()`, `get(key, default)`, `setMany(array)`. Flat key/value, cache `settings.all`, `Cache::forget` on write                                        |
+| Settings table     | `.../migrations/2026_10_27_070653_create_settings_table.php`                                                                                                                  | `key string(100)` PK, `value text nullable` — **plaintext, koi encryption nahi**                                                                      |
+| Settings admin     | `app/Modules/Settings/Http/Controllers/SystemController.php`                                                                                                                  | `show`/`update` + `Audit::log('settings.updated', ...)` + changed-keys diff — copy karne layak pattern                                                |
+| Attachments        | `AttachmentController`, `Models/Attachment`, `config/attachments.php`, `ui/FileAttachments.vue`                                                                               | Polymorphic `attachable_type`/`attachable_id`, private disk `storage/app/private`, per-type permission keys, per-record `scope`, per-user daily quota |
+| Audit              | `Support/Audit.php`                                                                                                                                                           | `Audit::log(string $event, ?Model $subject, ?string $label, array $meta)` + `Audit::changes($before, $after)`                                         |
+| Audit event labels | `app/Modules/Settings/Http/Controllers/AuditLogController.php::EVENTS`                                                                                                        | UI filter labels — naye events yahan add karne padenge                                                                                                |
+| Email templates    | `Support/EmailTemplates.php`, `Mailer.php`, `Jobs/SendEmailJob.php`                                                                                                           | `{{ token }}` placeholders, DB overrides, admin editor maujood, `$tries=3` `$backoff=[60,300]`                                                        |
+| Numbering          | `Support/Naming.php`                                                                                                                                                          | `Naming::next(string $prefix, int $pad = 5)` → `PREFIX-00001`, `lockForUpdate` ke saath                                                               |
+| List/filter/sort   | `Support/TableQuery.php` + `useServerList.js` + `ListView.vue`                                                                                                                | `?f[key]=`, `?q=`, `?sort=&dir=`, cursor paginate, `total` sirf pehle page par                                                                        |
+| Layout             | `ListPage`, `FormPage`, `FormSection`, `FormGrid`, `Field`, `Input`, `Select`, `Modal`, `ConfirmDialog`, `StatusBadge`, `EmptyState`, `ReadField`, `ReportPage`, `ReportGrid` | Verification queue + checkout form inhi par banenge                                                                                                   |
+| Permissions        | `Support/PermissionCatalog.php` + `menu.php` + `PermissionSeeder`                                                                                                             | `platform.payments.{view,verify,refund}` already 04 §4.3 mein declare hain                                                                            |
+| Scheduler          | `routes/console.php` (`Schedule::command('bin:purge')->dailyAt('03:00')`)                                                                                                     | Naye commands yahan register honge                                                                                                                    |
 
 ### 0.3 Kya maujood **nahi** hai (aur yeh design kya maangta hai)
 
-| Gap | Asar | Faisla |
-|---|---|---|
-| **Koi PDF library nahi** — `dompdf`/`snappy`/`browsershot` dono repos mein zero hits | Invoice PDF generate nahi ho sakti | §2.9 — `barryvdh/laravel-dompdf` recommend; Phase 1 mein printable HTML fallback |
-| **`Mailer::send()` attachment support nahi** — signature `(string $to, string $subject, string $text, array $opts)`, `$opts` sirf `template_key`/`user_id` | PDF email mein attach nahi ho sakti | §2.9 — email mein **signed download link**, Mailer ko chhedna nahi |
-| **`Setting.value` plaintext** — koi `encrypted` cast nahi (sirf `EmailAccount.password` encrypted hai) | Gateway secret `settings` mein daalna = DB dump mein leak | §2.2 — naya `payment_gateway_accounts` table with `encrypted:array` |
-| **Attachment upload `update` permission maangta hai** (`AttachmentController::store` → `allow($cfg, 'update')`) | **Customer apni payment screenshot upload hi nahi kar sakta** — `platform.payments.verify` uske paas nahi | §2.1.2 — core mein optional `store` key (additive, back-compatible) |
-| **`AttachmentController::show()` hamesha download** (comment: "Hamesha download (inline nahi): HTML/SVG XSS na kar sake") | Admin screenshot **inline preview nahi kar sakta** — `<img src>` `Content-Disposition: attachment` ko render nahi karta | §2.6.2 — `?inline=1` sirf safe mime allowlist par |
-| **Koi virus/mime scan nahi** — sirf `extensions:` validation rule | Malicious file `storage/app/private` mein | §5.4 — mime cross-check + `nosniff` + safe-inline allowlist |
-| **Koi outbound HTTP client abstraction nahi** — `Http::` ka zero usage | Gateway calls ad-hoc likhe jayenge, koi timeout/retry standard nahi | §1.5 — `AbstractGateway::http()` ek hi jagah timeout/retry/redaction |
-| **`onOneServer()`/`withoutOverlapping()` kahin use nahi** | Do workers aik hi payment verify kar sakte hain | §2.7 — DB status guard (`WHERE status = ?`) primary defence; scheduler par `withoutOverlapping` additive |
-| **`settings()` dot-notation helper nahi** — `SettingsStore::get()` literal key leta hai | `payments.manual.easypaisa_number` **literal key** hai, nesting nahi | §2.2 — keys flat likhi jayengi, dot sirf naming convention hai |
-| **Koi Money value object nahi** — `useFormat().money()` sirf `en-US` 2dp, currency code nahi | PKR symbol/precision UI par hardcode hoga | §2.1.3 — `money_minor()` helper in `useFormat` (UI package, additive) |
-| **`Naming::next()` mein year segment / reset nahi** | Fiscal-year sequence nahi ban sakta | §2.9 — prefix mein year daal do (`INV-2026`) — code change nahi chahiye |
+| Gap                                                                                                                                                        | Asar                                                                                                                    | Faisla                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Koi PDF library nahi** — `dompdf`/`snappy`/`browsershot` dono repos mein zero hits                                                                       | Invoice PDF generate nahi ho sakti                                                                                      | §2.9 — `barryvdh/laravel-dompdf` recommend; Phase 1 mein printable HTML fallback                         |
+| **`Mailer::send()` attachment support nahi** — signature `(string $to, string $subject, string $text, array $opts)`, `$opts` sirf `template_key`/`user_id` | PDF email mein attach nahi ho sakti                                                                                     | §2.9 — email mein **signed download link**, Mailer ko chhedna nahi                                       |
+| **`Setting.value` plaintext** — koi `encrypted` cast nahi (sirf `EmailAccount.password` encrypted hai)                                                     | Gateway secret `settings` mein daalna = DB dump mein leak                                                               | §2.2 — naya `payment_gateway_accounts` table with `encrypted:array`                                      |
+| **Attachment upload `update` permission maangta hai** (`AttachmentController::store` → `allow($cfg, 'update')`)                                            | **Customer apni payment screenshot upload hi nahi kar sakta** — `platform.payments.verify` uske paas nahi               | §2.1.2 — core mein optional `store` key (additive, back-compatible)                                      |
+| **`AttachmentController::show()` hamesha download** (comment: "Hamesha download (inline nahi): HTML/SVG XSS na kar sake")                                  | Admin screenshot **inline preview nahi kar sakta** — `<img src>` `Content-Disposition: attachment` ko render nahi karta | §2.6.2 — `?inline=1` sirf safe mime allowlist par                                                        |
+| **Koi virus/mime scan nahi** — sirf `extensions:` validation rule                                                                                          | Malicious file `storage/app/private` mein                                                                               | §5.4 — mime cross-check + `nosniff` + safe-inline allowlist                                              |
+| **Koi outbound HTTP client abstraction nahi** — `Http::` ka zero usage                                                                                     | Gateway calls ad-hoc likhe jayenge, koi timeout/retry standard nahi                                                     | §1.5 — `AbstractGateway::http()` ek hi jagah timeout/retry/redaction                                     |
+| **`onOneServer()`/`withoutOverlapping()` kahin use nahi**                                                                                                  | Do workers aik hi payment verify kar sakte hain                                                                         | §2.7 — DB status guard (`WHERE status = ?`) primary defence; scheduler par `withoutOverlapping` additive |
+| **`settings()` dot-notation helper nahi** — `SettingsStore::get()` literal key leta hai                                                                    | `payments.manual.easypaisa_number` **literal key** hai, nesting nahi                                                    | §2.2 — keys flat likhi jayengi, dot sirf naming convention hai                                           |
+| **Koi Money value object nahi** — `useFormat().money()` sirf `en-US` 2dp, currency code nahi                                                               | PKR symbol/precision UI par hardcode hoga                                                                               | §2.1.3 — `money_minor()` helper in `useFormat` (UI package, additive)                                    |
+| **`Naming::next()` mein year segment / reset nahi**                                                                                                        | Fiscal-year sequence nahi ban sakta                                                                                     | §2.9 — prefix mein year daal do (`INV-2026`) — code change nahi chahiye                                  |
 
 ### 0.4 Phase split
 
-| | **Phase 1 — Manual TRX** | **Phase 2 — Direct APIs** |
-|---|---|---|
-| Gateways | `manual_easypaisa`, `manual_jazzcash` | `jazzcash`, `easypaisa`, `card` |
-| Money movement | Customer wallet se merchant number par, **CP ke bahar** | Gateway ke through, CP redirect karta hai |
-| Verification | Admin, queue se | Signature + callback + reconciliation |
-| Effort | **~19 din** (§6.1) | **~17 din** (§6.2) |
-| Risk | Fraud (fake TRX), admin bandwidth | Integration correctness, PCI scope, refunds |
+|                | **Phase 1 — Manual TRX**                                | **Phase 2 — Direct APIs**                   |
+| -------------- | ------------------------------------------------------- | ------------------------------------------- |
+| Gateways       | `manual_easypaisa`, `manual_jazzcash`                   | `jazzcash`, `easypaisa`, `card`             |
+| Money movement | Customer wallet se merchant number par, **CP ke bahar** | Gateway ke through, CP redirect karta hai   |
+| Verification   | Admin, queue se                                         | Signature + callback + reconciliation       |
+| Effort         | **~19 din** (§6.1)                                      | **~17 din** (§6.2)                          |
+| Risk           | Fraud (fake TRX), admin bandwidth                       | Integration correctness, PCI scope, refunds |
 
 ### 0.5 Wiring checklist (naya feature = yeh 7 jagah)
 
 Yeh codebase har feature ko **7 registration points** se jodta hai. Payments mein koi bhi miss = silent dead feature (permission 403, template nahi milta, attachment 404).
 
-| # | Jagah | Kya add hoga |
-|---|---|---|
-| 1 | `app/Modules/Platform/menu.php` | `sections` items (TRX Queue), `permissions` array, `email_templates` block |
-| 2 | `database/seeders/PermissionSeeder.php` | `php artisan db:seed --class=PermissionSeeder` (idempotent, naye keys super-admin ko mil jate hain) |
-| 3 | `config/attachments.php` | `types.payment` entry |
-| 4 | `config/payments.php` | **naya file** — drivers, tolerances, phase flag |
-| 5 | `routes/console.php` | `Schedule::command('subscriptions:remind')`, `payments:prune-callbacks` |
-| 6 | `AuditLogController::EVENTS` | `payment.*`, `invoice.*` labels |
-| 7 | `CoreServiceProvider` (ya package `PaymentServiceProvider`) | Gateway registry binding, commands |
+| # | Jagah                                                       | Kya add hoga                                                                                        |
+| - | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 1 | `app/Modules/Platform/menu.php`                             | `sections` items (TRX Queue), `permissions` array, `email_templates` block                          |
+| 2 | `database/seeders/PermissionSeeder.php`                     | `php artisan db:seed --class=PermissionSeeder` (idempotent, naye keys super-admin ko mil jate hain) |
+| 3 | `config/attachments.php`                                    | `types.payment` entry                                                                               |
+| 4 | `config/payments.php`                                       | **naya file** — drivers, tolerances, phase flag                                                     |
+| 5 | `routes/console.php`                                        | `Schedule::command('subscriptions:remind')`, `payments:prune-callbacks`                             |
+| 6 | `AuditLogController::EVENTS`                                | `payment.*`, `invoice.*` labels                                                                     |
+| 7 | `CoreServiceProvider` (ya package `PaymentServiceProvider`) | Gateway registry binding, commands                                                                  |
+
+### 0.6 Needs accountant confirmation (NOT VERIFIED)
+
+**Yeh section design ke teen faisle hain jinke jawab tax/legal hain, technical nahi.** Main inhein facts ke tor par nahi likh raha — yeh aap ke accountant / tax advisor se confirm karne wali cheezein hain. Jahan tak design ka taalluq hai, code inke liye **configurable** hai, is liye jawab aane par code change nahi chahiye hoga.
+
+| # | Sawal | Kyun ahem hai (design par asar) | Design mein kahan | Status |
+|---|---|---|---|---|
+| **A1** | **Merchant wallet account type aur limits.** Kya `payments.manual.*_number` **personal** wallet hai ya **merchant/business** wallet? Har type ka receive limit, per-transaction limit, aur monthly cap alag hota hai | Agar personal wallet hai aur monthly receive cap hit ho jaye, to payments **silently fail** hongi — customer paisa bhejega, merchant account reject kar dega, aur humein pata bhi nahi chalega. Yeh "payment aaya hi nahi" support tickets ka sab se bara source hai | §2.1.3 (instructions), §2.8.4 (SLA), ops | **NOT VERIFIED** — provider (JazzCash/EasyPaisa) se account type aur limits confirm karein, aur accountant se keh kar business account par shift karein agar nahi hai |
+| **A2** | **Sales-tax invoice format.** Invoice par kya lazmi hai — NTN, STRN, tax rate, tax amount alag line, buyer ka NTN, invoice date format, koi specific wording? | `invoice_items.kind` mein `tax` already hai (04 §1.3), magar **kaunse fields invoice par print honge** woh A2 ka jawab hai. PDF template (`resources/views/invoices/pdf.blade.php`) uske mutabiq banega | §2.9.3 (PDF), §2.10 | **NOT VERIFIED** — accountant se invoice ka required format likhwa kar lein |
+| **A3** | **Invoice numbering + gap rules.** Kya sequential gap-free hona lazmi hai? Fiscal year kaun sa hai (calendar ya July–June)? Kitne saal invoices retain karni hain? Void invoice ka kya treatment? | Gap-free lazmi ho to `Naming::next()` ka "number at checkout" model kaam nahi karega — draft-then-assign pattern chahiye (1 din extra, §2.9.2 B). Retention requirement PDF/attachment retention policy badalta hai | §2.9.2, §7 D3 | **NOT VERIFIED** — FBR registration status aur requirement accountant/tax advisor se |
+| **A4** | **Kya humein sales-tax registration lazmi hai?** Threshold, service export treatment, aur agar haan to STRN kaise milega | Agar registration lazmi nahi, to A2/A3 ka poora sawal moot ho jata hai aur simple invoice kaafi hai. Agar lazmi hai, to invoice format aur numbering dono binding ho jate hain | §2.9 poora | **NOT VERIFIED** — yeh **legal/tax faisla hai**, is design ka nahi |
+| **A5** | **Wallet fee kaun bear karta hai** — sender ya receiver? Aur kya woh amount se alag dikhti hai? | Amount tolerance (§2.5.1) ka default `0` is farz par khara hai ke customer exact amount bhej sakta hai. Agar receiver se fee katti hai, to har payment "underpaid" dikhega aur tolerance ko fee ke barabar karna padega | §2.5.1 | **NOT VERIFIED** — provider fee schedule |
+
+**Yeh sab jaan boojh kar NOT VERIFIED hain.** Main tax/legal rules ko fact ke tor par nahi likh raha — woh jurisdiction, registration status aur waqt ke saath badalte hain, aur ghalat invoice format ka natija penalty hai. Har cheez **setting/config** se drive hoti hai taake jawab milne par code na badalna pade:
+
+```php
+// config/payments.php — A1..A5 ke jawab yahan aayenge, code nahi badlega
+'invoice' => [
+    'numbering'      => env('PAYMENTS_INVOICE_NUMBERING', 'calendar'), // calendar|fiscal
+    'fiscal_start_month' => 7,          // A3 ka jawab
+    'gap_free'       => false,          // A3 — true = draft-then-assign (§2.9.2 B)
+    'show_ntn'       => true,           // A2
+    'show_strn'      => false,          // A2
+    'tax_line'       => 'separate',     // A2 — separate|inclusive|none
+    'retention_years'=> 6,              // A3
+],
+```
+
+**Ek operational guard jo A1 se seedha aata hai** (§2.8.4 mein bhi repeat): admin dashboard par ek chhota card — *"Manual payments received this month: PKR 1,240,000 across 84 transactions"* — taake monthly cap ke qareeb aane ka pata **pehle** chale, na ke payments fail hone ke baad. Yeh card `payments` se compute hota hai, kisi external API se nahi.
 
 ---
 
@@ -111,9 +140,10 @@ enum PaymentStatus: string
 }
 ```
 
-**`partially_refunded` par ek inconsistency jo 04 mein hai:** 04 §1.3 ka `payments.status` comment sirf `refunded` list karta hai, magar 04 §8 **D4** likhta hai "`payments.status = refunded` (ya `partially_refunded`)". Yeh design `partially_refunded` ko **include** karta hai aur saath `payment_refunds` table deta hai (§3.6) — kyunke ek payment par **multiple** partial refunds ho sakte hain aur unka amount kisi single status column mein nahi aa sakta. 04 §1.3 ke comment mein ek lafz add karna hai (`refunded|partially_refunded`) — **04 ka v4 note** (§7 D2).
 
-**State graph (Phase 1 sirf solid lines, Phase 2 dashed):**
+**`partially_refunded` 04 mein ab maujood hai (v2 fix):** v1 mein 04 §1.3 ka `payments.status` comment sirf `refunded` list karta tha, magar §8 **D4** `partially_refunded` ka zikr karta tha — doc apne aap se inconsistent tha. **04 v4 (row 11) ne isay theek kar diya hai.** Yeh design us value ko use karta hai aur saath `payment_refunds` table deta hai (§3.6), kyunke ek payment par **multiple** partial refunds ho sakte hain aur unka amount kisi single status column mein nahi aa sakta.
+
+**State graph:**
 
 ```mermaid
 stateDiagram-v2
@@ -122,12 +152,16 @@ stateDiagram-v2
     pending --> failed: gateway ne mana kiya (P2)
     awaiting_verification --> verified: admin approve
     awaiting_verification --> rejected: admin reject + reason
-    rejected --> [*]
+    rejected --> awaiting_verification: resubmit (CORRECTABLE)
+    rejected --> awaiting_verification: admin unlock + resubmit (LOCKING)
+    rejected --> [*]: customer chhod deta hai
     verified --> partially_refunded: partial refund (P2)
     verified --> refunded: full refund
     partially_refunded --> refunded: baqi bhi wapas
     verified --> [*]
 ```
+
+**`rejected` ab terminal nahi hai.** v1 mein tha, aur woh ghalat tha: ek genuine TRX jise "screenshot clear nahi thi" ki wajah se reject kiya gaya, permanently dead ho jata tha — customer ka paisa merchant account mein pada rehta, aur woh TRX dobara submit bhi nahi kar sakta (unique index) aur naya bhi nahi bana sakta (paisa ek hi dafa gaya). Reject ki **do categories** hain, aur woh farq ab state machine mein hai (§2.4.3).
 
 **`rejected` terminal hai, `pending` par wapas nahi jata.** Resubmission **naya** `payments` row banata hai (§2.4.3). Wajah: har attempt ek alag claim hai (alag TRX, alag screenshot, alag time). Ek row ko reuse karne se audit trail mein "kis attempt par kya reject hua" gum ho jata hai, aur `unique(gateway, reference_norm)` bhi same reference ko dobara allow nahi karta.
 
@@ -368,6 +402,7 @@ abstract class AbstractGateway implements PaymentGateway
 }
 ```
 
+
 **Base class jaan boojh kar "thin" hai.** Payment state, invoice totals, subscription, retry policy — kuch bhi yahan nahi. Woh `PaymentService` (§2.7) mein hai, jo drivers se **upar** hai. Agar base class mein `markVerified()` daal dete to har naya driver apni marzi se subscription activate kar sakta — yani ek bug 5 jagah.
 
 ### 1.6 Driver registry + config
@@ -392,10 +427,23 @@ return [
         'trx_max_age_days'       => 7,    // is se purani TRX accept nahi
         'trx_future_skew_minutes' => 5,   // clock skew
         'invoice_pre_slack_minutes' => 15,
-        'amount_tolerance_minor' => 0,    // exact match = 0
+        'amount_tolerance_minor' => 0,    // exact match = 0 (A5 confirm hone tak)
         'max_submissions_per_hour' => 5,
+        'max_resubmits'          => 3,    // CORRECTABLE reject ke baad cap (§2.4.3.2)
         'screenshot_required'    => false,
-        'verification_sla_hours' => 12,   // sirf messaging + dashboard metric
+        'verification_sla_hours' => 12,   // customer-facing line + queue badge (§2.8.4)
+        'admin_notify_mode'      => 'instant',  // instant|digest|off (§2.8.4)
+    ],
+
+    'invoice' => [
+        'numbering'          => env('PAYMENTS_INVOICE_NUMBERING', 'calendar'), // calendar|fiscal
+        'fiscal_start_month' => 7,        // A3 — accountant se confirm (§0.6)
+        'gap_free'           => false,    // A3 — true = draft-then-assign (§2.9.2 B)
+        'show_ntn'           => true,     // A2 — accountant se confirm
+        'show_strn'          => false,    // A2
+        'tax_line'           => 'separate', // A2 — separate|inclusive|none
+        'retention_years'    => 6,        // A3
+        'link_days'          => 7,        // signed download link (§2.9.4) — rotation window chhoti
     ],
 
     'callbacks' => [
@@ -452,6 +500,7 @@ Binding `PaymentServiceProvider::register()` mein: `config('payments.drivers')` 
 ---
 
 ## 2. Phase 1 — Manual TRX
+
 
 ### 2.1 Checkout screen
 
@@ -658,12 +707,25 @@ reference_norm       string(120) nullable          // normalized TRX — unique 
 amount_expected_minor unsignedBigInteger           // invoice.total_minor at submit (frozen)
 amount_delta_minor   bigInteger  nullable          // claimed - expected (signed)
 fraud_flags          json        nullable          // computed flags (§2.4.2)
-review_notes         text        nullable          // admin ke notes (reject ke ilawa)
+review_notes         text        nullable          // admin ke notes — rejection history ka insani trail
 gateway_txn_at       timestamp   nullable          // Phase 2: gateway ka apna timestamp
 
+// ── resubmission (§2.4.3) ────────────────────────────────────────────────
+rejection_class      string(20)  nullable          // correctable|locking — reject ke waqt freeze
+resubmit_count       unsignedSmallInteger default 0
+reference_unlocked_at   timestamp nullable         // LOCKING reject ka admin unlock (single-use)
+reference_unlock_reason string(190) nullable
+reference_unlocked_by   foreignId nullable constrained('users') nullOnDelete
+
 unique (gateway, reference_norm)                   // asli duplicate guard
-// 04 ka unique(gateway, reference) hata dena chahiye — neeche wajah.
+// 04 v4 (row 10) ne isay reference_norm par shift kar diya hai — 04 mein already applied.
 ```
+
+**`rejection_class` alag column kyun, `rejection_reason` se derive kyun nahi:** reason enum ka mapping **badal sakta hai** (kal koi reason correctable se locking mein reclassify ho). Us surat mein purane rejects ka class bhi badal jayega — yani audit history ka matlab badal jayega. Class reject ke waqt **freeze** honi chahiye, bilkul jaise `amount_expected_minor` freeze hoti hai. Ek column ka kharcha, history ki correctness ka faida.
+
+**`resubmit_count` kyun:** CORRECTABLE reject ke baad customer dobara submit kar sakta hai — magar be-shumar. Bina cap ke woh "unclear screenshot" loop mein admin ko 20 dafa ping kar sakta hai. Cap = 3 (`payments.manual.max_resubmits`), uske baad row `locking` ban jati hai reason `too_many_attempts` ke saath.
+
+**`reference_unlocked_at` single-use hai:** resubmit par `null` ho jata hai. Warna ek unlock hamesha ke liye infinite retries de deta.
 
 #### 2.3.1 `reference_norm` kyun — `unique(gateway, reference)` ek hole hai
 
@@ -694,7 +756,7 @@ $norm = strtoupper(preg_replace('/\s+/u', '', trim($reference)));
 
 **`reference_norm` nullable kyun:** payment row checkout par banti hai, TRX baad mein aati hai. NULL unique index mein distinct hota hai → multiple `pending` rows allowed (04 ka wohi reasoning). App invariant: `status >= awaiting_verification` par `reference_norm` NOT NULL.
 
-**04 mein one-line change chahiye:** `unique(gateway, reference)` → `unique(gateway, reference_norm)` (§7 D1).
+**04 mein change already applied hai:** `unique(gateway, reference)` → `unique(gateway, reference_norm)` — **04 v4, row 10** (§7 D1). 06 sirf us change ko consume karta hai.
 
 #### 2.3.2 `amount_expected_minor` kyun (frozen copy)
 
@@ -712,27 +774,41 @@ POST /checkout/{invoice:number}/pay
 1. Guard: invoice.status === 'open' && invoice.user_id === auth()->id()
    warna 409 invoice_not_payable
 2. Guard: invoice.total_minor > 0                warna 409 (trial/zero invoice)
-3. Payment row dhoondo: WHERE invoice_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1
-   na mile to naya 'pending' row banao (resume path)
+3. Row select — teen case (§2.4.3):
+   a. RESUBMIT: WHERE invoice_id = ? AND status = 'rejected'
+                AND (rejection_class = 'correctable' OR reference_unlocked_at IS NOT NULL)
+                ORDER BY id DESC LIMIT 1
+   b. RESUME:   WHERE invoice_id = ? AND status = 'pending'  ORDER BY id DESC LIMIT 1
+   c. NAYA:     koi row na mile to 'pending' row banao
 4. Normalize: reference_norm = upper(no-whitespace(reference))
 5. Duplicate pre-check (friendly 422):
    SELECT 1 FROM payments WHERE gateway = ? AND reference_norm = ?
+     AND id <> :current_payment_id            ← khud ko chhod kar (resubmit case)
    → mila to 422 duplicate_reference (DB unique ka friendly version)
 6. Fraud flags compute karo (§2.4.2) — hard block ya flag
-7. DB::transaction:
+7. DB::transaction — case ke mutabiq:
      UPDATE payments SET
         status = 'awaiting_verification',
         reference = ?, reference_norm = ?,
         amount_minor = ?, amount_expected_minor = invoice.total_minor,
         amount_delta_minor = ?, sender_number = ?, sender_name = ?,
         claimed_paid_at = ?, submitted_at = now(),
-        fraud_flags = ?, submitted_by = auth()->id()
-     WHERE id = ? AND status = 'pending'      ← status guard, double-submit
-8. DB::afterCommit: Audit::log('payment.submitted', ...), email payment_received
+        fraud_flags = ?, submitted_by = auth()->id(),
+        -- resubmit par extra:
+        resubmit_count = resubmit_count + 1,
+        rejection_reason = NULL, rejection_class = NULL,
+        reference_unlocked_at = NULL, reference_unlock_reason = NULL,
+        verified_by = NULL, verified_at = NULL
+     WHERE id = ? AND status = :expected        ← 'pending' ya 'rejected'
+8. DB::afterCommit: Audit::log(...), email payment_received, admin notify (§2.8.4)
 9. 302 /checkout/{number}/status
 ```
 
-**Step 7 ka `WHERE status = 'pending'` guard** double-submit rokta hai: do tabs se do submit → sirf ek `UPDATE` affect karta hai (affected = 1), doosre ko 409. `lockForUpdate` ki zaroorat nahi kyunke conditional `UPDATE` atomic hai.
+**Step 7 ka `WHERE status = :expected` guard** double-submit rokta hai: do tabs se do submit → sirf ek `UPDATE` affect karta hai (affected = 1), doosre ko 409. `lockForUpdate` ki zaroorat nahi kyunke conditional `UPDATE` atomic hai.
+
+**Step 5 ka `id <> :current` lazmi hai.** Resubmission mein `reference_norm` **wahi** rehti hai — self-check ke baghair customer apni hi row se "duplicate" ka 422 khayega aur resubmit kabhi kaam nahi karega. Yeh exactly woh bug hai jo v1 design mein tha (jahan resubmit ka koi rasta hi nahi tha).
+
+**Step 7 mein `rejection_*` clear kyun:** nayi attempt ka apna faisla hoga. Purana reason **gum nahi hota** — `audit_logs` mein `payment.rejected` row hamesha rehti hai, aur `review_notes` mein insani trail. Row par sirf "current state" rehta hai.
 
 **Step 5 friendly check kyun jab DB unique hai:** DB `1062` exception user ko `SQLSTATE[23000]` dikhata hai. Pre-check 422 deta hai, magar **race mein DB hi final guard hai** — pre-check ko security control na samjhein, sirf UX.
 
@@ -742,7 +818,7 @@ Do categories: **hard block** (submit hi nahi hota) aur **flag** (submit hota ha
 
 | # | Check | Severity | Implementation | Test |
 |---|---|---|---|---|
-| F1 | Duplicate `reference_norm` (kisi bhi invoice par) | **Block** 422 | Step 5 pre-check + DB unique | T1 |
+| F1 | Duplicate `reference_norm` (kisi bhi invoice par, **apni row chhod kar** `id <> :current`) | **Block** 422 | Step 5 pre-check + DB unique | T1, T5f |
 | F2 | `reference_norm` already `verified`/`refunded` | **Block** 409 | Wahi query, status filter | T2 |
 | F3 | Invoice already paid / void | **Block** 409 | Step 1 | T3 |
 | F4 | `amount_minor <= 0` | **Block** 422 | Validation | T4 |
@@ -764,16 +840,193 @@ Do categories: **hard block** (submit hi nahi hota) aur **flag** (submit hota ha
 
 **Kya yeh checks "fraud detection" hain?** Nahi — yeh **deterministic invariants + velocity heuristics** hain. Koi ML, koi score, koi third-party. Wajah: Phase 1 ka volume (din ke 5–20 payments) ML ke liye bahut chhota hai, aur galat flag ka cost (legit customer block) zyada hai. Admin ka faisla hi final hai.
 
-#### 2.4.3 Resubmission (reject ke baad)
+#### 2.4.3 Resubmission — do rejection classes
 
-Rejected payment ke baad customer wahi invoice dobara pay kar sakta hai:
+**v1 ka design ghalat tha.** Wahan har reject ke baad naya row + naya TRX lazmi tha. Natija: ek **genuine** TRX jise "screenshot clear nahi thi" ki wajah se reject kiya gaya, permanently dead ho jata — paisa merchant account mein pada rehta, `reference_norm` unique index mein phansi hoti, aur customer ke paas koi rasta nahi hota. Woh TRX kisi aur invoice par bhi nahi lag sakti, aur naya TRX banega nahi (paisa ek hi dafa gaya hai).
 
-- **Naya** `payments` row (`status = pending`) — purana `rejected` rehta hai, apne reason ke saath
-- Naya TRX ID chahiye (purani `reference_norm` unique mein phansi hui hai — **yeh jaan boojh kar hai**: same TRX dobara submit karna bhi fraud ka signal hai)
-- Screenshot naye payment row par attach hoga (attachment `attachable_id` badalta hai)
+**Usool:** reject ka matlab do mein se ek cheez hota hai, aur unka ilaaj bilkul alag hai:
+
+| | **CORRECTABLE** | **LOCKING** |
+|---|---|---|
+| **Matlab** | Claimed **transaction** asli lagti hai; defect **claim ki metadata / evidence** mein hai | Claimed **transaction** khud kharab hai |
+| `reference_norm` | **Wahi rehti hai** | **Locked** |
+| Row | **Wahi row** `rejected → awaiting_verification` | Wahi row, magar admin unlock ke baghair nahi |
+| Customer action | Fix karke resubmit (naya screenshot, corrected amount, sahi invoice) | Naya TRX chahiye (ya admin se rabta) |
+| Admin action | Kuch nahi — queue mein wapas aa jati hai | Unlock (per-reason policy, neeche) |
+
+#### 2.4.3.1 Reject reason enum (do classes)
+
+```php
+enum RejectionReason: string
+{
+    // ── CORRECTABLE — transaction asli, claim mein defect ────────────────
+    case ScreenshotUnclear = 'screenshot_unclear';  // paisa aaya, screenshot parcheez/screenshot nahi
+    case WrongInvoice      = 'wrong_invoice';       // TRX kisi doosri invoice ki thi
+    case Underpaid         = 'underpaid';           // amount galat likha (ya waqai kam aaya)
+    case MissingInfo       = 'missing_info';        // sender number / time / screenshot missing
+    case ReferenceInvalid  = 'reference_invalid';   // TRX ID galat type hui — asli TRX maujood hai
+
+    // ── LOCKING — transaction khud mashkook ────────────────────────────
+    case FakeTrx           = 'fake_trx';            // statement mein maujood nahi
+    case TrxAlreadyUsed    = 'trx_already_used';    // yeh TRX pehle kisi invoice ko pay kar chuki
+    case FraudSuspected    = 'fraud_suspected';     // screenshot manipulated, sender reuse
+    case TooManyAttempts   = 'too_many_attempts';   // correctable cap khatam (system-set)
+
+    public function class(): RejectionClass
+    {
+        return match ($this) {
+            self::ScreenshotUnclear, self::WrongInvoice, self::Underpaid,
+            self::MissingInfo, self::ReferenceInvalid => RejectionClass::Correctable,
+            default => RejectionClass::Locking,
+        };
+    }
+}
+```
+
+`rejection_class` **reject ke waqt** `$reason->class()` se row par freeze hoti hai (enum derive nahi hoti, §2.3.2 ka wohi reasoning).
+
+#### 2.4.3.2 CORRECTABLE — wahi row, wahi `reference_norm`
+
+Customer status page par "Fix and resubmit" dekhta hai, aur form **pre-filled** aata hai (jo values thi wohi) — usay sirf defect theek karna hai.
+
+| Reason | Customer kya theek karta hai | Row par kya badalta hai |
+|---|---|---|
+| `screenshot_unclear` | Naya/better screenshot upload | Sirf attachments (`attachable_id` wahi row) |
+| `wrong_invoice` | Sahi invoice chunta hai | **`invoice_id`** (guarded, neeche) + `amount_expected_minor` recompute |
+| `underpaid` | Claimed amount theek karta hai (typo) ya difference bhej kar naya TRX | `amount_minor`, `amount_delta_minor` |
+| `missing_info` | Sender number / paid-at / screenshot | Woh fields |
+| `reference_invalid` | Sahi TRX ID type karta hai | **`reference_norm` badalta hai** (naya normalize) — yani yeh practically naya reference hai |
+
+```php
+// PaymentService::resubmit()
+DB::transaction(function () use ($payment, $data) {
+    $locked = Payment::whereKey($payment->id)
+        ->where('status', 'rejected')
+        ->where(function ($q) {
+            $q->where('rejection_class', 'correctable')
+              ->orWhereNotNull('reference_unlocked_at');
+        })
+        ->lockForUpdate()
+        ->first();
+
+    if ($locked === null) {
+        throw new PaymentNotResubmittable();       // 409
+    }
+
+    // Cap — correctable loop se bachne ke liye
+    if ($locked->resubmit_count >= config('payments.manual.max_resubmits')) {
+        $locked->update([
+            'rejection_class' => 'locking',
+            'rejection_reason' => 'too_many_attempts',
+        ]);
+        throw new PaymentNotResubmittable();
+    }
+
+    // wrong_invoice: sirf usi user ki, 'open' invoice par re-point
+    if ($data->invoiceId !== $locked->invoice_id) {
+        $target = Invoice::whereKey($data->invoiceId)
+            ->where('user_id', $locked->submitted_by)
+            ->where('status', 'open')
+            ->first();
+        if ($target === null) {
+            throw new InvalidInvoiceTarget();      // 422 — cross-customer move nahi
+        }
+    }
+
+    $locked->update([
+        'status'                => 'awaiting_verification',
+        'invoice_id'            => $data->invoiceId,
+        'reference'             => $data->reference,
+        'reference_norm'        => normalizeReference($data->reference),
+        'amount_minor'          => $data->amountMinor,
+        'amount_expected_minor' => $target->total_minor,
+        'amount_delta_minor'    => $data->amountMinor - $target->total_minor,
+        'sender_number'         => $data->senderNumber,
+        'sender_name'           => $data->senderName,
+        'claimed_paid_at'       => $data->claimedPaidAt,
+        'submitted_at'          => now(),
+        'resubmit_count'        => $locked->resubmit_count + 1,
+        'rejection_reason'      => null,
+        'rejection_class'       => null,
+        'reference_unlocked_at' => null,           // unlock single-use
+        'reference_unlock_reason' => null,
+        'verified_by'           => null,
+        'verified_at'           => null,
+    ]);
+
+    Audit::log('payment.resubmitted', $locked, $locked->reference, [
+        'previous_reason' => $previousReason,      // closure se
+        'resubmit_count'  => $locked->resubmit_count,
+        'reference_changed' => $previousNorm !== $locked->reference_norm,
+    ]);
+});
+```
+
+**`wrong_invoice` ka guard lazmi hai.** Row ko doosri invoice par re-point karna matlab paisa us invoice par lagana. Bina `user_id` check ke koi bhi customer kisi bhi invoice par payment "move" kar sakta — yani free subscription. Is liye target invoice **usi user ki** aur **`open`** honi chahiye. Aur `amount_expected_minor` naye invoice se recompute hoti hai, warna delta purane invoice ka rehta.
+
+**`reference_invalid` ka honest note:** is reason par `reference_norm` **badalti** hai (kyunke asli TRX doosri hai). Yani yeh technically "same reference resubmission" nahi hai — magar **same row** hai, jo audit ke liye behtar hai (ek customer, ek invoice, ek payment attempt, corrected). Unique index naya reference allow karta hai.
+
+#### 2.4.3.3 LOCKING — reference locked, per-reason unlock policy
+
+Flat "admin unlock" kaafi nahi hai, kyunke `trx_already_used` ka unlock **structurally** double-spend hai. Is liye har LOCKING reason ka apna unlock policy hai:
+
+| Reason | Unlock allowed? | Kyun |
+|---|---|---|
+| `fake_trx` | **Haan**, reason lazmi | TRX statement mein nahi mili — magar admin ne baad mein bank statement se confirm kar liya ho to unlock justified hai |
+| `trx_already_used` | **Nahi** | Yeh TRX pehle hi kisi invoice ko pay kar chuki hai. Unlock karna = ek hi paisa do jagah. Koi admin faisla isay sach nahi bana sakta — customer ko **naya TRX** chahiye |
+| `fraud_suspected` | **Haan**, magar second confirm + `security_events` | Flag history mein **rehta** hai (`resolved_by` ke saath) — unlock flag ko delete nahi karta |
+| `too_many_attempts` | **Nahi** (system-set) | Yeh cap hai, admin ka faisla nahi. Bypass karne ka matlab cap ka koi matlab nahi |
+
+```php
+// POST /platform/payments/{payment}/unlock   — permission: platform.payments.verify
+public function unlock(Request $request, Payment $payment)
+{
+    $data = $request->validate(['reason' => ['required', 'string', 'max:190']]);
+
+    abort_unless($payment->status === 'rejected', 409);
+    abort_unless($payment->rejection_class === 'locking', 409);
+
+    // trx_already_used aur too_many_attempts par unlock hi nahi
+    abort_if(in_array($payment->rejection_reason,
+        ['trx_already_used', 'too_many_attempts'], true), 422, 'This reference cannot be unlocked.');
+
+    DB::transaction(function () use ($payment, $data) {
+        $payment->update([
+            'reference_unlocked_at'   => now(),
+            'reference_unlocked_by'   => auth()->id(),
+            'reference_unlock_reason' => $data['reason'],
+            'review_notes'            => trim(($payment->review_notes ?? '')
+                ."\n[".now()->toDateTimeString()."] unlocked: ".$data['reason']),
+        ]);
+
+        Audit::log('payment.reference_unlocked', $payment, $payment->reference, [
+            'reason' => $data['reason'],
+            'rejection_reason' => $payment->rejection_reason,
+        ]);
+
+        if ($payment->rejection_reason === 'fraud_suspected') {
+            SecurityEvent::log('payment.reference_unlocked_after_fraud', $payment);
+        }
+    });
+}
+```
+
+**`fraud_suspected` par second confirm kyun:** yeh woh case hai jahan admin pehle "fraud" keh chuka hai aur ab wapas ja raha hai. Ek galti se unlock kar dena = flag ka poora maqsad khatam. UI `ConfirmDialog danger=true` + wajah lazmi. Do-admin (four-eyes) approval Phase 2 mein — abhi volume itna nahi ke woh process bane.
+
+**Unlock `reference_norm` ko chhoota nahi.** Woh locked hi rehti hai; unlock sirf *resubmit ki permission* deta hai. Is liye ek unlocked reference bhi kisi doosri invoice par nahi ja sakti (unique index), aur resubmit par wahi row wapas `awaiting_verification` hoti hai.
+
+#### 2.4.3.4 Naya TRX chahiye to (locking ka default rasta)
+
+Agar unlock available nahi (ya admin ne diya nahi), customer **naya** payment row banata hai:
+
+- Naya `payments` row (`status = pending`) — purana `rejected` rehta hai apne reason ke saath
+- Naya TRX ID chahiye (purani `reference_norm` unique mein phansi hui hai — **yeh sahi hai**: same TRX ko dobara "naya payment" banana fraud ka signal hai)
+- Screenshot naye payment row par attach hoga
 - Invoice `open` rehti hai (`rejected` payment invoice ko nahi chhoota)
 
-04 §5.3 ka "TRX reject → payment rejected + reason email + invoice open rehta hai (dobara submit ho sakta hai)" — yeh design usay exactly implement karta hai.
+**Dono raste saath rehte hain.** Correctable → same row (audit saaf). Locking → naya row (naya claim). Koi case aisa nahi jahan customer ke paas rasta hi na ho — yahi v1 ka bug tha.
+
+04 §5.3 ka "TRX reject → payment rejected + reason email + invoice open rehta hai (dobara submit ho sakta hai)" — yeh design usay **do categories** ke saath implement karta hai, "dobara submit" ko ek hi tarah se nahi samajhta.
 
 ### 2.5 Amount + time tolerance
 
@@ -789,7 +1042,9 @@ elseif ($delta > 0)                  { /* OVERPAY  — flag overpaid  */ }
 else                                 { /* UNDERPAY — flag underpaid */ }
 ```
 
-**Default tolerance `0` kyun:** manual TRX mein customer **exact** amount bhej sakta hai — wallet koi fee nahi kaatta sender se (receiver se kaatta hai, aur woh bhi alag se dikhta hai). Yani `14,990` bhejna ek choice hai, majboori nahi. Tolerance daalne se sirf "kitna kam chalega" ka faisla aata hai, aur woh faisla admin ka hona chahiye, config ka nahi.
+**Default tolerance `0` kyun:** yeh is farz par khara hai ke customer **exact** amount bhej sakta hai. Agar wallet sender se koi fee kaatta hai, ya receiver se katti hai aur woh amount se alag dikhti hai, to `0` tolerance galat hoga — har payment "underpaid" dikhega. **Yeh farz A5 hai (§0.6) aur NOT VERIFIED hai** — provider ki fee schedule accountant/provider se confirm karein. Confirm hone tak `0` default rakha gaya hai kyunke woh **safe** direction hai: galti se zyada strict hona admin ko flag dikhata hai (jo woh approve kar sakta hai), galti se zyada loose hona underpayment ko chupata hai.
+
+Tolerance badalne ka faisla **config ka nahi, admin ka** hona chahiye — is liye setting hai, hardcoded nahi.
 
 **Overpayment (delta > 0):**
 - Approve karo, invoice `paid`, `amount_paid_minor` = claimed
@@ -836,13 +1091,14 @@ invoice.issued_at - 15 min   <=   claimed_paid_at   <=   now + 5 min
 | Query | `WHERE status = 'awaiting_verification'` |
 | Default sort | `submitted_at ASC` — **purani pehle** (FIFO fairness) |
 | `TableQuery` config | `sortable: submitted_at, amount_minor`, `filters: gateway, flagged, age_bucket`, `search: reference, sender_number, invoice.number` |
-| Columns | Invoice # · Gateway · Amount · Delta · Sender · Paid at · Age · Flags · Actions |
+| Columns | Invoice # · Gateway · Amount · Delta · Sender · Paid at · **Age** · Flags · Actions |
 | Row end | `RowAction` — "Review" → detail screen |
 | Filters | `f.gateway=manual_easypaisa`, `f.flagged=1`, `f.age_bucket=over_24h` |
-| Badge | `StatusBadge tone="warning"` jab `age > 24h` — SLA breach |
+| Age badge | 4 tiers (`neutral`/`info`/`warning`/`danger`), `submitted_at` se compute — **§2.8.4** |
+| Pin | `> 24h` rows list ke top par pin + row tint (FIFO todta hai, jaan boojh kar) |
 | Empty | `EmptyState variant="records"` "Queue clear" |
 
-**Sort `submitted_at ASC` kyun, `DESC` nahi:** nayi payments upar rakhna tempting hai magar purani rows ko neeche dhakel deta hai — 3 din purani payment kabhi verify hi nahi hoti. FIFO + age badge dono chahiye.
+**Sort `submitted_at ASC` kyun, `DESC` nahi:** nayi payments upar rakhna tempting hai magar purani rows ko neeche dhakel deta hai — 3 din purani payment kabhi verify hi nahi hoti. FIFO + age badge dono chahiye. `> 24h` wali rows pin hoti hain (§2.8.4) — woh FIFO se upar, magar unke andar bhi purani pehle.
 
 #### 2.6.2 Detail screen
 
@@ -858,28 +1114,44 @@ Invoice number, invoice total, period, plan, tenant, subscription status, delta 
 
 **Flags panel** — `fraud_flags` array ke badges (`amount_mismatch`, `sender_reuse`, `self_payment`, `format_suspect`, `ip_velocity`), har badge ke saath human label + tooltip (kyun flag hua).
 
+**Section 4 — History** — `DocumentActivity` (`type = 'payment'`, `id = payment.id`, `reloadKey`) se audit timeline: `payment.submitted` → `payment.rejected` → `payment.resubmitted` → `payment.verified`. **Resubmission ke baad admin ko poora safar dikhna chahiye** — warna woh purani reject ke baare mein nahi janta aur naya evidence purane ke context ke baghair dekhta hai. `resubmit_count` bhi yahan badge ke tor par.
+
 **Actions** — `RowAction` / buttons:
-- **Approve** (`ConfirmDialog`, `danger=false`) — summary: "INV-00124 ko PKR 15,000 paid mark karein aur subscription activate karein?"
-- **Reject** (`Modal` with reason) — reason **required**, enum + free text
-- **Approve with adjustment** (underpayment case) — `ConfirmDialog danger=true` + wajah lazmi
-- **View invoice** — link
-- **View customer** — link
+
+| Action | Kab dikhta hai | Confirm |
+|---|---|---|
+| **Approve** | `awaiting_verification` | `ConfirmDialog`, `danger=false` — "INV-00124 ko PKR 15,000 paid mark karein aur subscription activate karein?" |
+| **Reject** | `awaiting_verification` | `Modal` + reason (enum grouped by class, §2.6.3) + free text. **Reason required** |
+| **Approve with adjustment** | underpayment case | `ConfirmDialog danger=true` + wajah lazmi |
+| **Unlock reference** | `rejected` + `locking` + reason unlock-able (§2.4.3.3) | `ConfirmDialog danger=true` + wajah lazmi. `trx_already_used` / `too_many_attempts` par **button dikhta hi nahi** |
+| **View invoice** | hamesha | — |
+| **View customer** | hamesha | — |
+
+**Unlock button sirf tab render hota hai jab woh actually kaam karega.** `trx_already_used` par button dikha kar 422 dena — admin ko lagta hai "system toot gaya". Server-side guard (`abort_if`) phir bhi hai, kyunke UI bypass ho sakti hai.
 
 **Bulk approve jaan boojh kar nahi (Phase 1).** Wajah: 20 rows ek click par approve karna ka matlab 20 screenshots kabhi dekhe hi nahi gaye. Fraud control ka poora point admin ka individual faisla hai. Bulk **reject** bhi nahi (galat reject = paying customer lost). Phase 2 mein "bulk approve sirf zero-flag + exact-amount rows, max 10, with per-row screenshot thumbnail grid" consider ho sakta hai.
 
-#### 2.6.3 Reject reasons (enum)
+#### 2.6.3 Reject reasons — admin UI, class ke hisab se grouped
 
-| Code | Label | Kab |
-|---|---|---|
-| `not_received` | Payment not received | Merchant account mein paisa nahi aaya |
-| `reference_invalid` | Invalid TRX ID | TRX ID exist nahi karti |
-| `amount_mismatch` | Amount does not match | Bahut kam/zyada |
-| `underpaid` | Underpaid | Kam amount, admin ne reject chuna |
-| `duplicate` | Duplicate payment | Yeh TRX pehle use ho chuki hai |
-| `suspected_fraud` | Suspected fraud | Screenshot manipulated, sender reuse |
-| `other` | Other | Free text lazmi |
+`RejectionReason` enum (§2.4.3.1) ki 9 values. UI mein **do groups** — yeh grouping hi admin ko sikhata hai ke customer ka kya rasta hoga:
 
-`rejection_reason` column `string(190)` hai (04) — enum code + free text: `"underpaid: expected 15000, received 14990"`. Admin UI enum se select karta hai aur text auto-fill hota hai, edit ho sakta hai.
+| Code | Label | Class | Customer ka rasta |
+|---|---|---|---|
+| `screenshot_unclear` | Screenshot not readable | **Correctable** | Naya screenshot, wahi TRX |
+| `wrong_invoice` | Paid for a different invoice | **Correctable** | Sahi invoice chune, wahi TRX |
+| `underpaid` | Amount does not match | **Correctable** | Amount theek kare, wahi TRX |
+| `missing_info` | Missing sender / time / proof | **Correctable** | Fields bhare, wahi TRX |
+| `reference_invalid` | Invalid TRX ID | **Correctable** | Sahi TRX ID type kare |
+| `fake_trx` | Not found in statement | **Locking** | Admin unlock ya naya TRX |
+| `trx_already_used` | TRX already used | **Locking** | **Naya TRX lazmi** (unlock nahi) |
+| `fraud_suspected` | Suspected fraud | **Locking** | Admin unlock (second confirm) ya naya TRX |
+| `too_many_attempts` | Too many attempts | **Locking** (system) | Support se rabta |
+
+**Purane `not_received` / `amount_mismatch` / `duplicate` / `other` hata diye gaye.** Wajah: woh class ke hisab se ambiguous thay — `not_received` aur `fake_trx` ek hi cheez hain (do naam = admin confuse), `duplicate` aur `trx_already_used` bhi. `other` ko `missing_info` absorb karta hai (free text har reason ke saath allowed hai, alag reason ki zaroorat nahi).
+
+`rejection_reason` column `string(190)` hai (04) — enum code + optional free text: `"underpaid: expected 15000, received 14990"`. UI enum se select karta hai, text auto-fill hota hai aur edit ho sakta hai.
+
+**Admin UI par class ka asar:** `Locking` select karte hi ek hint dikhta hai — *"Customer will need a new transaction ID, or you must unlock this reference."* `Correctable` par — *"Customer can fix this and resubmit the same transaction."* Yeh chhota hint admin ko ghalat class chunne se rokta hai, jo customer ka paisa phansa deta hai.
 
 ### 2.7 Approve / reject — atomic, idempotent, audited
 
@@ -987,33 +1259,52 @@ DB::transaction(function () use ($payment, $admin, $reason) {
 
     if ($locked === null) throw new PaymentAlreadyHandled();
 
+    $before = $locked->only(['status', 'rejection_reason', 'rejection_class']);
+
     $locked->update([
         'status'           => 'rejected',
         'verified_by'      => $admin->id,
         'verified_at'      => now(),
-        'rejection_reason' => $reason,        // 'underpaid: expected 15000, received 14990'
+        'rejection_reason' => $reason->value,       // 'underpaid'
+        'rejection_class'  => $reason->class()->value, // FREEZE — enum se derive nahi hoga (§2.3)
+        'review_notes'     => trim(($locked->review_notes ?? '')
+            ."\n[".now()->toDateTimeString()."] rejected: ".$detail), // detail = enum + free text
     ]);
 
     Audit::log('payment.rejected', $locked, $locked->reference, [
-        'reason' => $reason,
+        'reason' => $reason->value,
+        'class'  => $reason->class()->value,
+        'detail' => $detail,
         'flags'  => $locked->fraud_flags,
+        'changes' => Audit::changes($before, $locked->only(['status', 'rejection_reason', 'rejection_class'])),
     ]);
 });
-// afterCommit: email payment_rejected (reason + resubmit link)
+// afterCommit: email payment_rejected (reason + class ke hisab se resubmit CTA)
 ```
+
+**`rejection_class` yahan freeze hoti hai, derive nahi hoti.** Baad mein agar `underpaid` ko correctable se locking mein reclassify kiya jaye, purane rejects apna class badal na lein — warna "is payment ko customer fix kar sakta tha ya nahi" ka jawab waqt ke saath badalta rahega, aur audit history bekaar ho jati hai.
 
 **Reject invoice ko nahi chhoota** — invoice `open` rehti hai, `amount_due` wahi. Is liye resubmission path (§2.4.3) kaam karta hai.
 
-**Reject par `security_events`:** sirf jab `suspected_fraud` reason ho. Wajah: 04 §8 D2 `security_events` ko fraud investigation ke liye rakhta hai; "TRX ID galat thi" security event nahi hai. `suspected_fraud` par ek row (`payment.fraud_rejected`) → user ka disable review trigger ho sakta hai (05 §5).
+**Reject par `security_events`:** sirf LOCKING reasons par, aur `too_many_attempts` par nahi (woh abuse cap hai, security incident nahi).
+
+| Reason | `security_events` | Kyun |
+|---|---|---|
+| `fake_trx`, `trx_already_used` | `payment.fraud_rejected` | Fraud attempt ka record — 04 §8 D2 `security_events` isi ke liye hai |
+| `fraud_suspected` | `payment.fraud_rejected` + user disable review trigger (05 §5) | Sab se serious class |
+| Correctable (sab 5) | **Koi nahi** | "TRX ID galat type hui" security event nahi — customer ki galti hai, attack nahi |
+| `too_many_attempts` | **Koi nahi** | Abuse cap; 5 correctable rejects ka matlab fraud nahi, bad UX hai |
 
 #### 2.7.5 Audit events (AuditLogController::EVENTS mein add)
 
 | Event | Subject | Meta |
 |---|---|---|
 | `payment.submitted` | `Payment` | `reference`, `amount_minor`, `delta_minor`, `flags` |
+| `payment.resubmitted` | `Payment` | `previous_reason`, `resubmit_count`, `reference_changed` |
 | `payment.verified` | `Payment` | `changes`, `invoice`, `amount_minor`, `delta_minor` |
 | `payment.verified_underpaid` | `Payment` | + `override_reason` |
-| `payment.rejected` | `Payment` | `reason`, `flags` |
+| `payment.rejected` | `Payment` | `reason`, `class`, `detail`, `flags`, `changes` |
+| `payment.reference_unlocked` | `Payment` | `reason`, `rejection_reason` (credentials **kabhi** nahi) |
 | `payment.refunded` | `Payment` | `amount_minor`, `scope: full\|partial` (Phase 2) |
 | `payment.account_updated` | `PaymentGatewayAccount` | `changes` (credentials **kabhi** meta mein nahi — sirf `secret_last4`) |
 
@@ -1066,6 +1357,72 @@ Agar day 8 par payment verify ho jaye:
 
 Yeh flow Phase 1 mein **manual** hai (admin verify karte waqt slug conflict dekhta hai). Automated slug re-negotiation Phase 2.
 
+#### 2.8.4 Notification + visibility (admin ko pata kaise chale)
+
+**v1 ka faisla ghalat tha.** Wahan likha tha "admin ko `payment.submitted` par email nahi — queue screen kaafi hai". Manual TRX mein **admin hi verification ka SLA hai**; agar usay pata hi na chale to payment beshtar 12 ghante padi rehti hai aur customer support ko likhta hai. Notification optional nahi, **core flow** hai.
+
+**Admin notification — email (Phase 1):**
+
+| Cheez | Detail |
+|---|---|
+| Template | `admin_payment_submitted` (naya key, §2.10) |
+| Recipient | `SettingsStore::get('payments.admin_notify_email')`, fallback `support_email` setting, fallback `config('mail.from.address')` |
+| Trigger | `payment.submitted` / `payment.resubmitted` — `DB::afterCommit` |
+| Content | Invoice #, amount, gateway, TRX ID, sender, flags, age, **direct queue link** |
+| Mode | `payments.admin_notify_mode` = `instant` \| `digest` \| `off` |
+
+**`digest` mode kyun maujood hai:** din ke 20 payments = 20 emails, aur admin inbox dekhna chhod deta hai (jo `off` se bhi bura hai). `digest` ek din mein ek email bhejta hai jismein pending rows ki table hoti hai, sab se purani pehle. Default `instant` rakha gaya hai kyunke Phase 1 ka volume kam hai — magar switch maujood hona chahiye, warna volume barhne par log `off` kar denge.
+
+**`off` mode bhi honest hai:** agar admin queue screen din mein 3 dafa khud dekhta hai, email bekaar hai. `off` ka matlab "mujhe queue par bharosa hai", na ke "mujhe pata na chale".
+
+**WhatsApp / SMS — Phase 2 (optional):**
+
+| Cheez | Detail |
+|---|---|
+| Kyun Phase 2 | Koi SMS/WhatsApp gateway integrated nahi hai. WhatsApp Business API ka apna onboarding (business verification, template approval) hai — yeh alag project hai |
+| Kya chahiye | Provider account + approved message template + `payments.admin_notify_whatsapp` setting |
+| Kyun email kaafi hai (abhi) | Admin CP mein logged in hota hai; email mobile par push ho jati hai. SMS ki extra latency/kharach justified nahi |
+| Kab zaroori hoga | Jab admin non-technical ho aur CP na khole, ya multi-admin team ho jahan ek ko assign karna ho |
+
+**Pending-verification age badge (queue):**
+
+`payments.submitted_at` se age compute hoti hai — `created_at` se **nahi** (row checkout par banti hai, submit baad mein; `created_at` se age hamesha zyada dikhegi).
+
+| Age | Badge | Tone | Queue position |
+|---|---|---|---|
+| < 4h | `2h 15m` | `neutral` | Normal (FIFO) |
+| 4–12h | `7h 40m` | `info` | Normal |
+| 12–24h | `18h 05m` | `warning` | Normal |
+| **> 24h** | `1d 6h` | `danger` | **Pin to top** + row tint |
+
+`> 24h` rows ko pin karna FIFO ko torta hai — **jaan boojh kar**. FIFO ka maqsad fairness hai, magar 3 din purani row ko neeche rakhna fairness nahi, neglect hai. Pin + tint + danger badge teen signals hain ke yeh row miss ho rahi hai.
+
+Filter `f.age_bucket` (`under_4h`, `4h_12h`, `12h_24h`, `over_24h`) — admin "sab se purani" dekh kar bulk mein nipta sakta hai (bulk approve nahi, bulk **review**).
+
+**Customer-facing expected verification time:**
+
+`payments.verification_sla_hours` (default `12`) se, **teen jagah** dikhta hai:
+
+| Kahan | Line |
+|---|---|
+| Checkout pay screen (submit se **pehle**) | "Manual payments are usually verified within **12 hours**. You can use the product as soon as it is confirmed." |
+| Status page (`awaiting_verification`) | "Usually verified within **12 hours** · submitted 2 hours ago" |
+| `payment_received` email | "Our team usually verifies manual payments within 12 hours" |
+
+**Submit se pehle dikhana lazmi hai.** Customer ko payment karne se pehle pata hona chahiye ke 12 ghante lagenge — warna woh 30 minute baad support ko likhta hai. Yeh expectation-setting hai, marketing nahi.
+
+**SLA breach par line badal jati hai** (honesty > optimism):
+
+```
+submitted < sla_hours      →  "Usually verified within 12 hours"
+submitted >= sla_hours     →  "Taking longer than usual. We are on it — no action needed from you."
+submitted >= 2 × sla_hours →  + "Need help? WhatsApp {{ support_whatsapp }}"
+```
+
+Yeh chhoti si branch support tickets kam karti hai: customer ko pata hota hai ke system ne usay bhula nahi, aur usay dobara paisa nahi bhejna.
+
+**Clock hours, business hours nahi.** `verification_sla_hours = 12` ka matlab 12 clock ghante. Business-hours calculation (9–6, Mon–Sat) zyada "accurate" lagti hai magar customer ke liye confusing hai — 11pm ki payment par "kal 11am tak" kehna 12 ghante se kam lagta hai, jabke asal intezaar zyada hai. Clock hours simple aur predictable hai. Agar admin genuinely sirf office hours mein verify karta hai, to `sla_hours` ko `24` set karein — sach bolna behtar hai.
+
 ### 2.9 Invoice generation (PDF) + numbering
 
 #### 2.9.1 Numbering — `Naming::next()` jaisa hai waise hi
@@ -1080,14 +1437,27 @@ $number = Naming::next('INV-'.now()->format('Y'));   // → INV-2026-00001
 
 `invoices.number string(30)` mein fit ho jata hai (`INV-2026-00001` = 14 chars). Naya saal = naya prefix = naya counter automatically. `document_sequences` ki row `INV-2026` apne aap ban jati hai (`insertOrIgnore`). Koi `reset` policy likhne ki zaroorat nahi.
 
-**Yeh fiscal-year numbering ke liye kaafi hai** (Pakistan ka fiscal year 1 July – 30 June hai, calendar year nahi). Agar fiscal year chahiye:
+**Yeh fiscal-year numbering ke liye bhi kaafi hai.** Agar fiscal year chahiye (calendar year nahi), to prefix mein fiscal year daal dein:
 
 ```php
-$fy = now()->month >= 7 ? now()->year : now()->year - 1;
-$number = Naming::next('INV-'.$fy);      // INV-2026-00001 (FY 2026-27)
+// fiscal_start_month config se — 7 hardcoded nahi (A3 ka jawab)
+$start = (int) config('payments.invoice.fiscal_start_month', 7);
+$fy = now()->month >= $start ? now()->year : now()->year - 1;
+$number = Naming::next('INV-'.$fy);      // INV-2026-00001
 ```
 
+**Fiscal year ka start month main fact ke tor par nahi likh raha.** Pakistan ka tax/fiscal year kaun sa hai, aur kya usi ko invoice numbering mein use karna lazmi hai — **yeh A3 hai (§0.6) aur NOT VERIFIED hai.** `fiscal_start_month` config mein hai, is liye jawab aane par sirf setting badlegi.
+
 **Yeh ek config flag hona chahiye** (`payments.invoice.numbering: calendar|fiscal`), hardcoded nahi.
+
+> **Needs accountant confirmation — A2 / A3 (§0.6).** Is section ka poora faisla do tax sawalon par khara hai jo main fact ke tor par nahi likh sakta:
+>
+> - **A3 — numbering/gaps:** kya sequential **gap-free** hona lazmi hai? fiscal year kaun sa hai? void invoice ka kya treatment? kitne saal retain karni hain?
+> - **A2 — invoice format:** invoice par NTN/STRN/tax rate/tax amount lazmi hain ya nahi? (PDF template uske mutabiq banega, §2.9.3)
+>
+> **Agar gap-free lazmi hai** → Approach B (neeche §2.9.2), +1 din. **Agar nahi** → Approach A kaafi hai.
+> Design dono ko support karta hai (`payments.invoice.gap_free` flag), is liye jawab aane par code nahi badlega — sirf config.
+> **Yeh NOT VERIFIED hai.** Main tax rules ko fact ke tor par nahi likh raha.
 
 #### 2.9.2 Gap problem (aur faisla)
 
@@ -1099,11 +1469,13 @@ $number = Naming::next('INV-'.$fy);      // INV-2026-00001 (FY 2026-27)
 | **B. Draft number `TMP-{ulid}`, real number at TRX submit** | Nahi (sirf submit ki hui invoices number lein) | `number` column update karna padta, aur `unique` par reassignment. ~1 din extra |
 | **C. Number at `paid` (verify ke baad)** | Nahi, magar invoice bina number ke rehti hai | `number` nullable karna padta — 04 se deviation |
 
-**Recommend A + documented gaps.** Wajah: gap ka matlab sirf yeh hai ke kuch numbers "issued magar void/abandoned" hain. Legal requirement gap-free hona **sirf** registered sales-tax invoices par hota hai. KhattakBits ka Phase 1 volume aur registration status **VERIFY IN OFFICIAL DOCS** (FBR sales tax registration threshold aur invoice serial requirements — tax rules change hote hain, aur yeh legal/tax advisor ka sawal hai, is design ka nahi).
+**Recommend A + documented gaps — magar yeh recommendation A3 ke jawab par conditional hai.** Gap ka matlab sirf yeh hai ke kuch numbers "issued magar abandoned" hain. **Kya gap-free hona lazmi hai — yeh tax/legal sawal hai, aur main usay fact ke tor par nahi likh raha (A3, §0.6).** Agar aap ka accountant kehta hai ke gap-free chahiye (ya registration lazmi hai, A4), to Approach B chunein. Agar nahi, A.
 
 **Agar gap-free lazmi ho:** Approach B. `invoices.number` ko checkout par `TMP-{ULID}` do, aur `PaymentService::submitTrx()` ke andar usi transaction mein `Naming::next()` se replace karo. Abandoned checkouts `TMP-` hi rehte hain (jo `uncollectible` par prune ho jate hain). Yeh **§7 D3** hai — Phase 1 ke liye A, B documented fallback.
 
-**Void invoices number retain karte hain.** 04 §1.3: "invoice void hota hai, delete nahi (legal record)". Void register (`/platform/invoices?status=void`) un gaps ka explanation hai.
+**Void invoices number retain karte hain.** 04 §1.3: "invoice void hota hai, delete nahi (legal record)". Void register (`/platform/invoices?status=void`) un gaps ka explanation hai — agar auditor poochhe to jawab wahin se milta hai.
+
+**Config flag se dono support:** `payments.invoice.gap_free = true|false`. `true` par `PaymentService` `TMP-` se `INV-` par switch karta hai; `false` par number checkout par hi lag jata hai. Code dono raste rakhta hai (~1 din), kyunke A3 ka jawab aaj nahi mila aur baad mein switch karna migration + data fix ban jata.
 
 #### 2.9.3 PDF
 
@@ -1126,17 +1498,25 @@ $number = Naming::next('INV-'.$fy);      // INV-2026-00001 (FY 2026-27)
 
 **Urdu text ka honest caveat:** agar invoice par Urdu (company name, terms) chahiye to dompdf ko Urdu font embed karna padta hai (Noto Nastaliq ya Jameel Noori). RTL shaping dompdf mein kamzor hai. **NOT VERIFIED** — Phase 1 mein invoice **English only** rakhein, Urdu Phase 2 (ya `browsershot` par switch). Yeh design decision hai, technical limitation nahi.
 
+> **Needs accountant confirmation — A2 (§0.6).** PDF par **kaunse fields lazmi hain** woh main tay nahi kar sakta: NTN, STRN, tax rate, tax amount alag line, buyer ka NTN, koi specific wording/disclaimer. **Yeh NOT VERIFIED hai aur legal/tax sawal hai.**
+>
+> Design ka hissa jo aaj bhi ban sakta hai: `invoices` + `invoice_items` mein `tax` kind already hai (04 §1.3), `billing_profile_snapshot` mein `ntn`/`strn` already hai (04 §8 D3). Yani **data maujood hai** — sirf **layout** ka faisla baqi hai.
+>
+> Practical rasta: Phase 1 mein invoice ko `config('payments.invoice.show_ntn')`, `show_strn`, `tax_line` flags se drive karein, sab default `false`/`none`. Accountant ka jawab aane par sirf config badlegi, PDF template nahi.
+
 #### 2.9.4 Invoice email — attachment nahi, link
 
 `Mailer::send(string $to, string $subject, string $text, array $opts)` — `$opts` sirf `template_key` aur `user_id` leta hai. **Attachment support nahi hai.**
 
 Do raste:
-- **A. Signed link** (recommend) — email body mein `https://app.khattakbits.com/checkout/INV-00124/pdf?expires=...&signature=...`. `URL::temporarySignedRoute('invoice.pdf', now()->addDays(30), [...])`. Zero core change
+- **A. Signed link** (recommend) — email body mein `https://app.khattakbits.com/checkout/INV-00124/pdf?expires=...&signature=...`. `URL::temporarySignedRoute('invoice.pdf', now()->addDays(config('payments.invoice.link_days')), [...])`. Zero core change
 - **B. `Mailer` extend karo** — `$opts['attachments']`, `SendEmailJob` mein `->attach()`. Core change + queue payload mein file path
 
-**A kyun:** invoice 30 din tak downloadable rehni chahiye (customer tax filing ke liye maangega), jabke attachment ek dafa ka hota hai aur inbox mein gum ho jata hai. Aur link se "invoice dobara bhejo" ka support ticket bhi khatam hota hai — customer khud download kar leta hai.
+**A kyun:** invoice link se "invoice dobara bhejo" ka support ticket khatam hota hai — customer khud download kar leta hai. Attachment ek dafa ka hota hai aur inbox mein gum ho jata hai.
 
-### 2.10 Email templates (3 naye keys)
+**Link 30 din ka nahi, 7 din ka (v2 mein badla).** `APP_KEY` rotation har signed URL ko invalid kar deta hai (§5.2.1) — 30 din ke link ka matlab hai ke ek rotation ke baad ek mahine ke saare invoice emails dead ho jate hain. 7 din woh window chhota kar deta hai, aur customer jo invoice 7 din baad maangega woh "resend invoice" button (ya platform se download) use karega — jo account ke andar hamesha available hai. `payments.invoice.link_days` config se.
+
+### 2.10 Email templates (4 naye keys)
 
 `EmailTemplates` ka `{{ token }}` syntax, `[a-z_]+` only. Keys `app/Modules/Platform/menu.php` ke `email_templates` block mein declare hongi (core keys hijack nahi hotin).
 
@@ -1205,15 +1585,75 @@ Do raste:
 ],
 ```
 
+```php
+    'admin_payment_submitted' => [
+        'name'    => 'Admin: payment needs verification',
+        'subject' => '[{{ app_name }}] {{ amount }} pending verification - {{ invoice_number }}',
+        'body'    => "A payment is waiting for verification.\n\n"
+                   . "Invoice: {{ invoice_number }}\n"
+                   . "Customer: {{ user_name }} ({{ user_email }})\n"
+                   . "Amount: {{ amount }} (expected {{ amount_expected }})\n"
+                   . "Gateway: {{ gateway }}\n"
+                   . "TRX ID: {{ reference }}\n"
+                   . "Sender: {{ sender_number }}\n"
+                   . "Paid at: {{ paid_at }}\n"
+                   . "Flags: {{ flags }}\n"
+                   . "Waiting for: {{ age }}\n\n"
+                   . "Review now: {{ queue_url }}\n\n"
+                   . "SLA is {{ sla_hours }} hours.",
+        'placeholders' => [
+            'app_name'        => 'Workspace name from settings',
+            'invoice_number'  => 'Invoice number',
+            'user_name'       => 'Customer name',
+            'user_email'      => 'Customer email',
+            'amount'          => 'Claimed amount in PKR',
+            'amount_expected' => 'Invoice total in PKR',
+            'gateway'         => 'manual_easypaisa or manual_jazzcash',
+            'reference'       => 'TRX ID',
+            'sender_number'   => 'Sender wallet number',
+            'paid_at'         => 'Claimed payment time (PKT)',
+            'flags'           => 'Fraud flags, or "none"',
+            'age'             => 'Time since submission, e.g. 2h 15m',
+            'queue_url'       => 'Direct link to this payment in the queue',
+            'sla_hours'       => 'Verification SLA in hours from settings',
+        ],
+        'required' => ['invoice_number', 'reference', 'queue_url'],
+        'samples'  => [
+            'user_name' => 'Ayesha Khan', 'user_email' => 'ayesha@acme.pk',
+            'invoice_number' => 'INV-2026-00124', 'amount' => 'PKR 15,000.00',
+            'amount_expected' => 'PKR 15,000.00', 'gateway' => 'manual_easypaisa',
+            'reference' => '12345678901', 'sender_number' => '0300-9876543',
+            'paid_at' => '2026-11-13 18:22 PKT', 'flags' => 'none', 'age' => '0h 03m',
+            'queue_url' => 'https://app.khattakbits.com/platform/payments/queue?f[highlight]=8412',
+            'sla_hours' => '12',
+        ],
+    ],
+```
+
 | Template | Trigger | To |
 |---|---|---|
 | `payment_received` | TRX submit (`afterCommit`) | Customer |
 | `payment_approved` | Admin approve (`afterCommit`) | Customer |
 | `payment_rejected` | Admin reject (`afterCommit`) | Customer |
+| `admin_payment_submitted` | TRX submit / resubmit (`afterCommit`) | Admin (`payments.admin_notify_email`) — `instant` mode |
 
-**`payment_rejected` ka tone:** "hum verify nahi kar sake" — "aap ne fraud kiya" nahi. Wajah: 90% rejects galti hoti hai (galat TRX, kam amount), fraud nahi. Blaming tone support ticket barhati hai.
+**`payment_rejected` ka tone:** "hum verify nahi kar sake" — "aap ne fraud kiya" nahi. Wajah: beshtar rejects galti hoti hai (galat TRX, kam amount), fraud nahi. Blaming tone support ticket barhati hai.
 
-**Admin ko bhi notify?** `payment_received` par admin email **nahi** — queue screen + dashboard badge kaafi hai. Wajah: din ke 20 emails admin ke inbox ko bekaar karte hain; queue ek jagah hai jahan woh dekhta hai. Magar **SLA breach alert** (24h+ pending) admin ko jata hai — `subscriptions:remind` ka bhai command (§4.2).
+**`payment_rejected` ka body class ke hisab se badalta hai** — yeh v2 ka ahem farq hai:
+
+| Class | Email kehta hai | CTA |
+|---|---|---|
+| **Correctable** | "{{ reason_detail }} — aap yeh theek kar ke **wahi transaction** dobara submit kar sakte hain." | "Fix and resubmit" → `/checkout/{number}/pay` (pre-filled) |
+| **Locking** | "Yeh transaction ID dobara use nahi ho sakti. Aapko **nayi** transaction chahiye." | "Submit a new payment" → `/checkout/{number}/pay` |
+| **Locking + unlockable** (`fake_trx`) | "Hum yeh transaction verify nahi kar sake. Support se rabta karein — hum check karenge." | "Contact support" (WhatsApp link) |
+
+**`underpaid` ka special case:** email mein dono raste likhne padte hain, kyunke admin ko nahi pata customer ne typo kiya ya waqai kam bheja:
+
+> "If you entered the wrong amount, correct it and resubmit the same transaction. If the amount you sent was actually less, send the remaining **PKR 10.00** and submit the new transaction ID."
+
+Yeh ek hi template se dono cases handle karta hai — do templates banane ki zaroorat nahi.
+
+**Admin ko bhi notify?** **Haan — `admin_payment_submitted` (v2 mein reversed).** v1 mein "nahi" likha tha; woh ghalat tha kyunke manual TRX mein admin hi SLA hai. Poora design §2.8.4 mein: `instant`/`digest`/`off` mode, recipient setting, aur SLA breach alert (`payments:sla-alert`, §4.2).
 
 ### 2.11 Customer status page
 
@@ -1222,14 +1662,23 @@ Do raste:
 | Payment state | Badge | Message | Actions |
 |---|---|---|---|
 | `pending` | neutral "Not submitted" | "Enter your payment details" | "Pay now" |
-| `awaiting_verification` | warning "Verifying" | "Usually within {{ sla }} hours" + submitted values | "Update details" (agar `rejected` nahi hua), "Contact support" |
+| `awaiting_verification` | warning "Verifying" | SLA line (§2.8.4) + submitted values | "Contact support" |
 | `verified` | success "Confirmed" | "Open {{ product }}" | "Open product", "Download invoice" |
-| `rejected` | danger "Needs attention" | Reason + "submit correct details" | "Try again" |
+| `rejected` — **correctable** | warning "Needs a fix" | Reason detail + "you can resubmit the same transaction" | **"Fix and resubmit"** (pre-filled form) |
+| `rejected` — **locking** | danger "Needs attention" | Reason detail + "this transaction ID cannot be reused" | **"Submit a new payment"** (blank form) |
+| `rejected` — **locking, unlockable** | danger "Under review" | "Contact support — we will check this transaction" | "Contact support" (WhatsApp) |
 | `refunded` | neutral "Refunded" | Amount + date | — |
+
+**Rejected row ka CTA class se badalta hai** (§2.4.3) — yeh sab se ahem UX farq hai. v1 mein sab rejects ek hi "Try again" dikhate thay, jo `trx_already_used` par customer ko wohi TRX dobara type karwata aur phir 409 deta. Ab CTA batata hai ke **kya** karna hai.
+
+**SLA line** (`payments.verification_sla_hours` se, §2.8.4):
+- `submitted < sla_hours` → "Usually verified within **12 hours** · submitted 2 hours ago"
+- `>= sla_hours` → "**Taking longer than usual.** We are on it — no action needed from you."
+- `>= 2 × sla_hours` → + "Need help? WhatsApp {{ support_whatsapp }}"
 
 **Polling:** status page `useServerList` jaisa polling nahi karta. Ek chhota `setInterval` 30s par `GET /checkout/{number}/status.json` (JSON, `no-store`). **Yeh polling chhoti hai** — ek customer, 30s, sirf jab tab khula ho. Phase 2 mein SSE/websocket consider ho sakta hai, magar 30s polling ka cost negligible hai aur implementation 5 line ki.
 
-**"Update details" ka matlab:** TRX submit karne se pehle (`pending`) user values badal sakta hai. Submit ke baad (`awaiting_verification`) **nahi** — warna admin jo dekh raha hai woh badal jayega uske haath ke neeche. Change chahiye to admin reject kare, phir resubmit. Yeh **jaan boojh kar** strict hai: evidence immutable hona chahiye jab tak faisla pending hai.
+**"Update details" ka matlab (v2 mein badla):** v1 mein `awaiting_verification` par bhi "Update details" tha. Ab **nahi** — submit ke baad evidence immutable hai, warna admin jo dekh raha hai woh uske haath ke neeche badal jayega. Change chahiye to admin reject kare, phir correctable resubmit. `pending` par (submit se pehle) values badalna ab bhi allowed hai.
 
 ---
 
@@ -1710,8 +2159,8 @@ sequenceDiagram
 | Gateway password / integrity salt / API secret | `payment_gateway_accounts.credentials` JSON | **`encrypted:array` cast** (Laravel native, `APP_KEY` par) | Admin UI, bina deploy. Purana secret 24h tak accept (§3.3 rule 5) |
 | Webhook signing secret (outbound, 04 §1.3) | `webhook_endpoints.secret` | `encrypted` cast (already documented in 04) | Rotate + 24h dual-sign |
 | Merchant wallet number (public) | `settings` table | **Plaintext — sahi hai** | Admin UI |
-| `APP_KEY` | `.env` | — | Rotate = sab `encrypted` columns re-encrypt karna padega. Documented, rarely done |
-| HMAC secrets for renew-link tokens | `APP_KEY`-derived (`URL::signedRoute`) | — | `APP_KEY` ke saath |
+| `APP_KEY` | `.env` + **offline copy** (password manager, 2 log) | — | **Rotation procedure §5.2.1** — `APP_PREVIOUS_KEYS` already wired; rotation signed URLs bhi invalid karta hai |
+| HMAC secrets for renew-link tokens | `APP_KEY`-derived (`URL::signedRoute`) | — | `APP_KEY` ke saath — **is liye rotation se in-flight tokens invalid ho jate hain** (§5.2.1) |
 
 **Teen rules:**
 
@@ -1720,6 +2169,123 @@ sequenceDiagram
 3. **Secret kabhi `Audit::log` meta mein nahi.** Account update par sirf `secret_last4` + changed keys. `Audit::changes()` automatic diff leta hai — is liye controller `credentials` ko diff se **exclude** karega.
 
 **Logs:** `Log::channel('payments')` — alag channel, `daily` driver, 14 din retention. Gateway URLs log mein sirf **host** (path mein credential ho sakta hai).
+
+#### 5.2.1 `APP_KEY` — offline backup aur rotation
+
+**Yeh section payments ka sab se under-rated risk hai.** `payment_gateway_accounts.credentials` `encrypted:array` cast par chalta hai, yani **`APP_KEY` ke baghair woh data mathematically recover nahi ho sakta**. `APP_KEY` kho gaya = har merchant ka password/salt dobara gateway portal se lana padega, `webhook_endpoints.secret` aur `EmailAccount.password` bhi (woh bhi `encrypted` hain).
+
+**Do failure modes, dono ka ilaaj alag:**
+
+| Failure | Natija | Ilaaj |
+|---|---|---|
+| **`APP_KEY` kho gaya** (server rebuild, `.env` overwrite, deploy script bug) | Encrypted columns **permanently unreadable**. Gateway credentials, webhook secrets, email passwords — sab gayab | **Offline backup** — ek copy aisi jagah jo server ke saath na mare |
+| **`APP_KEY` leak ho gaya** (repo mein commit, log mein, backup bucket) | Sab encrypted values decrypt ho sakte hain | **Rotation** — naya key + re-encrypt + purana key retire |
+
+##### Offline backup — kya, kahan, kaun
+
+| Rule | Detail |
+|---|---|
+| **Kahan** | Password manager (1Password/Bitwarden vault) **+** ek sealed envelope safe mein. Dono, ek nahi |
+| **Kaun** | Kam az kam **do** log — ek aap, ek woh jo aap ki non-availability mein deploy kar sake. Ek shakhs ka backup = ek shakhs ka single point of failure |
+| **Kab verify** | Har 6 mahine: backup se key utha kar ek known encrypted value decrypt kar ke dekhein. **Bina test kiye backup, backup nahi hai** |
+| **Kabhi nahi** | Git (private repo bhi nahi), ticket/chat, `docs/`, DB, aur **DB dump ke saath wahi bucket** |
+
+**Aakhri point ahem hai aur `docs/02-DEPLOYMENT-GUIDE.md` §11 se seedha nikalta hai.** Wahan ka `backup.sh` DB dump **plaintext** `/var/backups/kb` mein likhta hai, aur `.env` (jismein `APP_KEY` hai) usi directory mein `openssl` se encrypt kar ke rakhta hai — phir dono `rclone` se **usi** remote bucket par jate hain.
+
+Iska matlab: jo `APP_KEY` ko `payment_gateway_accounts.credentials` ki encryption ki asli hijab samajh raha hai, uske liye woh hijab us waqt khatam ho jata hai jab kisi ko backup bucket + `BACKUP_PASSPHRASE` mil jaye. Encryption ka faida sirf "DB mil gaya magar backup bucket nahi" jaisi tang situation mein rehta hai.
+
+Is liye: **`APP_KEY` ki ek copy aisi jagah honi chahiye jo backup bucket se bilkul alag trust boundary ho** — password manager. Woh copy hi asli backup hai; bucket wali copy disaster recovery ke liye hai, security ke liye nahi.
+
+##### Rotation procedure (verified: `APP_PREVIOUS_KEYS` maujood hai)
+
+**Achhi khabar:** graceful rotation ke liye framework support **pehle se maujood hai** — koi package ya custom encrypter nahi chahiye. Verified:
+
+| Cheez | Kahan |
+|---|---|
+| `config/app.php:102` | `'previous_keys' => [...explode(',', env('APP_PREVIOUS_KEYS', ''))]` — already wired |
+| `EncryptionServiceProvider::registerEncrypter()` | `->previousKeys(array_map(...))` — config se encrypter tak |
+| `Encrypter::decrypt()` | `foreach ($this->getAllKeys() as $key)` — **decrypt** purane keys bhi try karta hai |
+| `Encrypter::encrypt()` | Sirf `$this->key` (current) use karta hai — **naya data naye key se likhta hai** |
+
+Yani: naya key set karo + purana `APP_PREVIOUS_KEYS` mein daalo → **sab kuch parhna chalta rehta hai**, aur naya data naye key se likhta hai. Purana data tab tak purane key par rehta hai jab tak woh rewrite na ho.
+
+**Procedure (5 steps, maintenance window mein):**
+
+```bash
+# 1. Naya key generate karo — likhta nahi, sirf print karta hai
+php artisan key:generate --show
+# → base64:NEWKEY...
+
+# 2. .env update — purana APP_KEY → APP_PREVIOUS_KEYS, naya → APP_KEY
+#    APP_KEY=base64:NEWKEY...
+#    APP_PREVIOUS_KEYS=base64:OLDKEY...
+#    (multiple purane keys comma-separated ho sakte hain)
+
+# 3. Config cache clear + deploy
+php artisan config:clear && php artisan config:cache
+
+# 4. Verify — purana data parhna chahiye (naya key + previous key)
+php artisan tinker --execute="dump(\App\Modules\Platform\Models\PaymentGatewayAccount::first()?->credentials);"
+
+# 5. Re-encrypt — purane key se encrypted rows ko naye key se rewrite karo
+php artisan payments:reencrypt-secrets --dry-run   # pehle gino
+php artisan payments:reencrypt-secrets             # phir chalao
+```
+
+`payments:reencrypt-secrets` **naya command hai** (framework mein re-encrypt command nahi hai):
+
+```php
+// Har encrypted column ko read (previous key se) → write (current key se)
+foreach (PaymentGatewayAccount::cursor() as $row) {
+    $row->credentials = $row->credentials;   // re-cast → naye key se encrypt
+    $row->saveQuietly();                     // audit/observer noise nahi
+}
+// webhook_endpoints.secret, email_accounts.password bhi isi command mein
+// (ya alag generic app:reencrypt --model=... --column=...)
+```
+
+**6. Purana key retire karo** — sirf jab step 5 verify ho jaye:
+
+```bash
+# APP_PREVIOUS_KEYS hatao, config:cache
+php artisan config:clear && php artisan config:cache
+# Phir dobara verify — sab kuch parhna chahiye (ab sirf naye key se)
+```
+
+**Agar step 6 ke baad kuch bhi decrypt fail ho** → `APP_PREVIOUS_KEYS` wapas daalo, step 5 dobara chalao. Isi liye purana key **tab tak na delete karein** jab tak ek poora din production mein clean na chal jaye.
+
+##### Rotation ka woh asar jo log bhool jate hain
+
+`APP_KEY` sirf `encrypted` cast ke liye nahi hai — woh **signed URLs** ki signing key bhi hai (`SerializableClosure::setSecretKey(config('app.key'))`, verified). Yani rotation ke baad:
+
+| Cheez | Asar |
+|---|---|
+| `renew-link` tokens (`?t=`, 05 §3.4) | **Invalid** — 30 min ke hote hain, is liye asar chhota |
+| Invoice signed download links (§2.9.4, 30 din) | **Invalid** — customer ke purane email ke link toot jayenge |
+| Password reset links | **Invalid** — user dobara request karega |
+| Session cookies | **Invalid** — sab logout ho jayenge (`SESSION_ENCRYPT=true` hai) |
+
+**Is liye rotation maintenance window mein karein, aur us se pehle:**
+- Invoice links ko 30 din se **7 din** par le aayein (§2.9.4) — tootne wale links ki window chhoti ho jati hai
+- Status page par "email nahi khul raha?" ka support link rakhein
+- Ya (behtar) invoice links ke liye **alag signing key** use karein `APP_KEY` ke bajaye — magar `URL::signedRoute` default key use karta hai, is liye custom signer chahiye. Phase 2 ka kaam; Phase 1 mein 7-din link kaafi hai
+
+#### 5.2.2 Deployment guide mein yeh add karna hai
+
+`docs/02-DEPLOYMENT-GUIDE.md` mein payments ke liye yeh entries chahiye (main ne guide ko chheda nahi — yeh list us kaam ke liye hai):
+
+| # | Guide ka section | Kya add hoga |
+|---|---|---|
+| 1 | **§7.1 / §7.2 `.env` templates** | `APP_PREVIOUS_KEYS=` (khali, commented explanation ke saath). `PAYMENTS_PHASE=1` |
+| 2 | **§11 Backups** | Note: `APP_KEY` ki **ek copy backup bucket se bahar** (password manager). Bucket wali copy disaster recovery hai, security backup nahi. Aur: DB dump plaintext hai — `payment_gateway_accounts.credentials` sirf `APP_KEY` se protected hai, is liye dump ko bhi encrypt karein ya access tight karein |
+| 3 | **§11 Backups** | `storage/app/private/attachments` ka backup **already hai** — magar payment proofs 1 saal retention (§5.4) ke saath align karein |
+| 4 | **§16 Security checklist** | `[ ] APP_KEY offline copy password manager mein (2 logon ke paas), 6-mahine test ki hui` |
+| 5 | **§16 Security checklist** | `[ ] APP_PREVIOUS_KEYS khali hai (rotation ke ilawa)` |
+| 6 | **§16 Security checklist** | `[ ]` `payment_gateway_accounts.credentials` encrypt hai (tinker se read kar ke verify) |
+| 7 | **§10 Scheduler** | `subscriptions:remind`, `payments:sla-alert`, `payments:prune-callbacks` (§4.2) |
+| 8 | **§9 Supervisor** | `QUEUE_CONNECTION=database` (aaj `.env` mein `sync` hai) — warna `afterCommit` jobs request ke andar chalenge aur provisioning HTTP call admin ke approve button ko slow karega (§2.7.3) |
+| 9 | **Naya section: "Key rotation runbook"** | §5.2.1 ka 5-step procedure, maintenance window warning ke saath |
+| 10 | **§13 Monitoring** | `payment.verification_pending_count` aur `payment.oldest_pending_age_hours` — alert agar `> sla_hours` (§2.8.4) |
 
 ### 5.3 Webhook IP + signature checks (Phase 2)
 
@@ -1761,7 +2327,7 @@ abort_unless(in_array($real, config('attachments.mime_for.'.$ext, []), true), 42
 
 ### 5.5 Test plan
 
-Phase 1 tests (T1–T28), Phase 2 (T29–T40). Sab feature tests, SQLite `:memory:` par.
+Phase 1 tests (T1–T40 + T50–T56), Phase 2 (T41–T49). Sab feature tests, SQLite `:memory:` par.
 
 | # | Test | Kya prove karta hai |
 |---|---|---|
@@ -1769,8 +2335,15 @@ Phase 1 tests (T1–T28), Phase 2 (T29–T40). Sab feature tests, SQLite `:memor
 | **T2** | Same TRX, different gateway (`manual_easypaisa` vs `manual_jazzcash`) | Allowed — do alag rails |
 | **T3** | Two `pending` payments, `reference_norm` NULL | Dono insert (NULL distinct) |
 | **T4** | Submit par `reference_norm` NOT NULL ho jati hai | App invariant |
-| **T5** | Rejected payment → resubmit same TRX | 409 — same reference dobara nahi |
-| **T6** | Rejected payment → resubmit **naya** TRX | Naya row, invoice `open`, kaam karta hai |
+| **T5** | **CORRECTABLE resubmit** — reject `screenshot_unclear`, phir wahi row wahi `reference_norm` dobara submit | 200, `status = awaiting_verification`, `resubmit_count = 1`, `rejection_class = NULL`. **Yeh test v1 design par fail hota tha** |
+| **T5a** | **LOCKING resubmit bina unlock** — reject `fake_trx`, phir wahi reference | 409 `reference_locked`, row `rejected` rehti hai |
+| **T5b** | **LOCKING + admin unlock** — `fake_trx`, admin unlock, phir resubmit | 200; `reference_unlocked_at` **consume** ho jati hai (NULL) |
+| **T5c** | **`trx_already_used` unlock** | 422 — is reason par unlock offered hi nahi hota (double-spend) |
+| **T5d** | **Resubmit cap** — 3 correctable resubmits ke baad 4th | 409, `rejection_class` `locking` ho jati hai (`too_many_attempts`) |
+| **T5e** | **`wrong_invoice`** — row ko doosre customer ki invoice par re-point | 422 `InvalidInvoiceTarget`; same user ki `open` invoice par 200 |
+| **T5f** | **Self-duplicate** — resubmit par duplicate pre-check apni hi row ko duplicate na samjhe | 200 (step 5 ka `id <> :current` guard). **Yeh guard na ho to resubmit kabhi kaam nahi karega** |
+| **T5g** | Resubmit par `reference_invalid` → naya reference | 200, `reference_norm` **badal** jati hai, `resubmit_count++` |
+| **T6** | Locking reject → **naya** TRX, naya row | Naya row, invoice `open`, kaam karta hai |
 | **T7** | `claimed_paid_at` = kal (8 din purani) | 422 `trx_too_old` |
 | **T8** | `claimed_paid_at` = +1 ghanta future | 422 |
 | **T9** | `claimed_paid_at` = invoice se 1 ghanta pehle | 422 |
@@ -1788,8 +2361,10 @@ Phase 1 tests (T1–T28), Phase 2 (T29–T40). Sab feature tests, SQLite `:memor
 | **T21** | Approve → webhook `payment.verified` + `invoice.paid` | afterCommit se jaate hain |
 | **T22** | Approve rollback (entitlement resolver throws) | **Koi** webhook nahi, koi email nahi, payment `awaiting_verification` |
 | **T23** | Reject → invoice `open` rehti hai | Resubmission path khula |
-| **T24** | Reject `suspected_fraud` | `security_events` row banti hai |
-| **T25** | Reject `reference_invalid` | **Koi** `security_events` row nahi |
+| **T24** | Reject `fraud_suspected` | `security_events` row + `rejection_class = locking` |
+| **T25** | Reject `screenshot_unclear` (correctable) | **Koi** `security_events` row nahi, `rejection_class = correctable` |
+| **T25a** | Reject `too_many_attempts` | **Koi** `security_events` row nahi (abuse cap, incident nahi) |
+| **T25b** | Reject ke baad `rejection_class` enum se **derive na ho** — reason reclassify karke dekho | Purani row ka class **nahi badalta** (frozen column) |
 | **T26** | Customer A invoice par customer B ka submit | 403 |
 | **T27** | Customer screenshot upload kare | 201 (naya `store` key kaam karta hai) |
 | **T28** | Admin `?inline=1` par PNG | `Content-Disposition: inline`, `nosniff` |
@@ -1805,6 +2380,13 @@ Phase 1 tests (T1–T28), Phase 2 (T29–T40). Sab feature tests, SQLite `:memor
 | **T38** | Payment verified in grace | `grace → active`, naya period |
 | **T39** | `renew-link` `return_url` evil host | 400 `return_url_not_allowed` |
 | **T40** | `renew-link` 2 dafa 5 min mein | Wahi invoice (idempotency) |
+| **T50** | TRX submit → `admin_payment_submitted` email | Admin ko jati hai, `queue_url` mein direct link, `instant` mode |
+| **T51** | `admin_notify_mode = digest` | Instant email **nahi**; digest mein purani pehle |
+| **T52** | `admin_notify_mode = off` | Koi email nahi; queue phir bhi row dikhata hai |
+| **T53** | Status page SLA line — `submitted < sla_hours` vs `>= sla_hours` | "Usually within 12 hours" → "Taking longer than usual" |
+| **T54** | Queue age badge + `> 24h` pin | `submitted_at` se compute (na ke `created_at`), `> 24h` top par |
+| **T55** | `APP_KEY` rotation — naya key + `APP_PREVIOUS_KEYS` | Purana `credentials` **parhna chalta hai** (decrypt fallback) |
+| **T56** | `payments:reencrypt-secrets` ke baad `APP_PREVIOUS_KEYS` hatana | Sab decrypt chalta hai — sirf naye key se |
 | **T41** | Phase 2: callback invalid signature | 401, koi payment change nahi, `gateway_callbacks` row `signature_ok=false` |
 | **T42** | Phase 2: same callback 3 dafa | Ek process, teeno 200 |
 | **T43** | Phase 2: callback unknown `gateway_ref` | 200, `processing_status=ignored`, alert |
@@ -1819,19 +2401,21 @@ Phase 1 tests (T1–T28), Phase 2 (T29–T40). Sab feature tests, SQLite `:memor
 
 ## 6. Sprint plan
 
-### 6.1 Phase 1 — Manual TRX (~19 din)
+### 6.1 Phase 1 — Manual TRX (~21.5 din)
 
 | Sprint | Kaam | Effort |
 |---|---|---|
-| **P1.0** | Foundation: `config/payments.php`, `PaymentStatus`/`GatewayFeature` enums, DTOs, `PaymentGateway` interface, `AbstractGateway`, `GatewayRegistry` + provider binding, `payment_gateway_accounts` migration + model (`encrypted:array`), admin accounts screen, `secret_last4` handling | **4d** |
+| **P1.0** | Foundation: `config/payments.php`, `PaymentStatus`/`GatewayFeature`/`RejectionReason`/`RejectionClass` enums, DTOs, `PaymentGateway` interface, `AbstractGateway`, `GatewayRegistry` + provider binding, `payment_gateway_accounts` migration + model (`encrypted:array`), admin accounts screen, `secret_last4` handling, **`payments:reencrypt-secrets` command** (§5.2.1) | **4.5d** |
 | **P1.1** | Core package changes (tag `v1.6.0`): `attachments.types[].store` key + `update` fallback, `?inline=1` safe-mime path, `mime` cross-check. Plus `config/attachments.php` `payment` entry with `authorize` callback | **2d** |
-| **P1.2** | Checkout: pay screen (instructions from driver), TRX form + validation, `PaymentService::submitTrx()` with normalization + F1–F15 checks + `amount_expected_minor` freeze, `payments` additive migration, status page + polling | **4d** |
-| **P1.3** | Verification queue: `/platform/payments/queue` (TableQuery + filters + age badge), detail screen (3 sections + flags + inline screenshot), approve/reject with status guard + `afterCommit` side effects, reject reason enum, audit events + `AuditLogController::EVENTS` | **4d** |
-| **P1.4** | Invoice: PDF view + dompdf install + routes (platform + customer signed), `useFormat().moneyMinor()`, 3 email templates + `menu.php` registration, signed download link | **2.5d** |
-| **P1.5** | Reminders + SLA: `subscriptions:remind` (5 templates, idempotent via `reminder_sent`), `payments:sla-alert`, scheduler registration with `withoutOverlapping`/`onOneServer`/timezone | **1.5d** |
-| **P1.6** | Tests T1–T40 + docs | **3d** |
+| **P1.2** | Checkout: pay screen (instructions from driver), TRX form + validation, `PaymentService::submitTrx()` with normalization + F1–F15 checks + `amount_expected_minor` freeze, `payments` additive migration (incl. resubmission columns), status page + polling + SLA line | **4.5d** |
+| **P1.3** | Verification queue: `/platform/payments/queue` (TableQuery + filters + 4-tier age badge + `>24h` pin), detail screen (3 sections + flags + inline screenshot), approve/reject with status guard + `afterCommit` side effects, reject reason enum **grouped by class**, **resubmit + unlock flows** (§2.4.3), audit events + `AuditLogController::EVENTS` | **5.5d** |
+| **P1.4** | Invoice: PDF view + dompdf install + routes (platform + customer signed 7-din link), `useFormat().moneyMinor()`, **4 email templates** (3 customer + 1 admin) + `menu.php` registration | **3d** |
+| **P1.5** | Reminders + notify: `subscriptions:remind` (5 templates, idempotent via `reminder_sent`), `payments:sla-alert`, **`admin_notify_mode` instant/digest/off** (§2.8.4), scheduler registration with `withoutOverlapping`/`onOneServer`/timezone | **2d** |
+| **P1.6** | Tests T1–T40 + T50–T56 + docs | **3.5d** |
 
-**Total ≈ 21 din** (19 working days + buffer). Solo dev ~4.5 hafte; 2 devs par ~2.5 hafte (P1.2/P1.3 parallel, P1.0 blocking).
+**Total ≈ 25 din** (21.5 working days + buffer). Solo dev ~5.5 hafte; 2 devs par ~3 hafte (P1.2/P1.3 parallel, P1.0 blocking).
+
+**v1 → v2 effort delta (+3.5d):** P1.0 +0.5 (re-encrypt command), P1.2 +0.5 (resubmission columns + SLA line), P1.3 +1.5 (**resubmit + unlock flows — do naye endpoints, guards, aur state transitions**), P1.4 +0.5 (4th template + 7-din link), P1.5 +0.5 (notify modes), P1.6 +0.5 (16 naye tests).
 
 **Dependencies:** P1.0 blocking sab. P1.1 blocking P1.2 (attachment upload) — aur **package release** chahiye (05 §5.1.1 ka wohi deploy pattern). P1.3 depends P1.2 (payment rows). P1.4 independent (P1.0 ke baad shuru ho sakta hai).
 
@@ -1856,12 +2440,14 @@ Phase 1 tests (T1–T28), Phase 2 (T29–T40). Sab feature tests, SQLite `:memor
 
 | Kaam | Phase 1 | Phase 2 |
 |---|---|---|
-| Audit events | 5 events | +2 (`payment.refunded`, `callback.rejected`) |
-| `security_events` | `payment.fraud_rejected` | +`callback.ip_mismatch`, `callback.signature_failed` |
+| Audit events | 7 events (`submitted`, `resubmitted`, `verified`, `verified_underpaid`, `rejected`, `reference_unlocked`, `account_updated`) | +2 (`payment.refunded`, `callback.rejected`) |
+| `security_events` | `payment.fraud_rejected` (sirf LOCKING), `payment.reference_unlocked_after_fraud` | +`callback.ip_mismatch`, `callback.signature_failed` |
 | Permissions | `platform.payments.{view,verify}` | +`platform.payments.refund` (04 §4.3 mein already) |
-| Email templates | 3 | +`refund_confirmed`, `refund_failed` |
-| Tests | T1–T40 | T41–T49 |
-| Dashboard | Queue count + SLA metric | + reconciliation mismatches, gateway success rate |
+| Email templates | **4** (3 customer + 1 admin) | +`refund_confirmed`, `refund_failed` |
+| Tests | T1–T40 + T50–T56 | T41–T49 |
+| Dashboard | Queue count, oldest pending age, **monthly received volume** (A1 guard, §0.6) | + reconciliation mismatches, gateway success rate |
+| Commands | `subscriptions:remind`, `payments:sla-alert`, `payments:prune-callbacks`, **`payments:reencrypt-secrets`** | +`payments:reconcile` |
+| Deployment guide | §5.2.2 ki 10 entries | + callback URL registration, IP allowlist |
 
 ---
 
@@ -1869,23 +2455,25 @@ Phase 1 tests (T1–T28), Phase 2 (T29–T40). Sab feature tests, SQLite `:memor
 
 ### D1 — `reference_norm` unique, `reference` raw
 
-04 §1.3 ka `unique(gateway, reference)` **replace** hoga `unique(gateway, reference_norm)` se. `reference` display ke liye raw rehti hai.
+04 §1.3 ka `unique(gateway, reference)` **replace** ho gaya `unique(gateway, reference_norm)` se. `reference` display ke liye raw rehti hai.
 
 **Wajah:** exact-string unique index whitespace/case variants se bypass ho jata hai — same TRX 4 dafa insert ho sakti hai aur 4 invoices "paid" ho sakte hain. Normalization app-level hai (uppercase + whitespace strip, punctuation nahi).
 
-**04 mein change:** §1.3 ke `payments` block mein ek line — `unique (gateway, reference)` → `unique (gateway, reference_norm)` + `reference_norm string(120) nullable` column. **04 ka v4 changelog row** chahiye.
+**04 mein applied:** v4 row 10 — `reference_norm` column + `unique(gateway, reference_norm)` + `index(gateway, reference_norm, status)` + T1b test.
 
 ### D2 — `payments.status` mein `partially_refunded` shamil
 
-04 §1.3 ka comment `refunded` tak mehdood hai magar §8 D4 `partially_refunded` ka zikr karta hai. Yeh design **include** karta hai, saath `payment_refunds` table (multiple partial refunds ke liye).
+04 §1.3 ka comment `refunded` tak mehdood tha magar §8 D4 `partially_refunded` ka zikr karta hai. Yeh design **include** karta hai, saath `payment_refunds` table (multiple partial refunds ke liye).
 
-**04 mein change:** status comment `refunded|partially_refunded`.
+**04 mein applied:** v4 row 11 — status comment mein `partially_refunded` add.
 
-### D3 — Invoice numbering: gap-accepting (Phase 1)
+### D3 — Invoice numbering: gap-accepting (Phase 1) — **conditional on A3**
 
-Number checkout par assign hota hai (`Naming::next('INV-'.year)`), abandoned checkouts se gaps aate hain. Gap-free chahiye to draft-then-assign pattern (§2.9.2 B) — 1 din extra, Phase 2 mein.
+Number checkout par assign hota hai (`Naming::next('INV-'.year)`), abandoned checkouts se gaps aate hain. Gap-free chahiye to draft-then-assign pattern (§2.9.2 B) — 1 din extra.
 
-**Wajah:** gap ka matlab sirf "issued magar abandoned" hai; void register explanation hai. Gap-free ki legal zaroorat **VERIFY IN OFFICIAL DOCS** (FBR rules) — tax advisor ka sawal.
+**Wajah:** gap ka matlab sirf "issued magar abandoned" hai; void register explanation hai.
+
+**Yeh faisla A3/A4 par conditional hai (§0.6) — NOT VERIFIED.** Gap-free numbering lazmi hai ya nahi, aur sales-tax registration lazmi hai ya nahi — **yeh tax/legal sawal hai, is design ka nahi.** Design dono raste rakhta hai (`payments.invoice.gap_free`), is liye accountant ka jawab aane par code nahi badlega. Agar accountant kehta hai "gap-free lazmi", to Approach B Phase 1 mein hi chahiye (Phase 2 mein nahi) — kyunke baad mein switch karne ka matlab purane invoices ka renumbering ya mixed-series hai, jo audit ke liye bura hai.
 
 ### D4 — Pending verification: koi provisional access nahi
 
@@ -1919,6 +2507,17 @@ Phase 1: admin gateway portal se refund karta hai, CP mein `payments.status = re
 
 Custom card form kabhi nahi. Hosted fields bhi acceptable (iframe), magar Phase 2 mein plain redirect recommend — sab se kam scope. PAN hamare server par = SAQ D = audit + pentest + quarterly scan, jo budget se bahar hai.
 
+### D11 — Reject ki do classes (CORRECTABLE / LOCKING)
+
+Har reject ko ek **class** milti hai jo tay karti hai ke `reference_norm` locked rehti hai ya nahi:
+
+- **CORRECTABLE** (`screenshot_unclear`, `wrong_invoice`, `underpaid`, `missing_info`, `reference_invalid`) — transaction asli, claim mein defect. **Wahi row** `rejected → awaiting_verification`, wahi `reference_norm`, naya screenshot allowed. Cap 3.
+- **LOCKING** (`fake_trx`, `trx_already_used`, `fraud_suspected`, `too_many_attempts`) — transaction khud mashkook. Reference locked; resubmission admin unlock ke baghair nahi. **`trx_already_used` par unlock kabhi nahi** (structurally double-spend).
+
+**Wajah:** v1 design har reject ke baad naya row + naya TRX maangta tha. Natija: ek **genuine** TRX jise "screenshot clear nahi thi" par reject kiya gaya, permanently dead ho jata — paisa merchant account mein, `reference_norm` unique index mein phansi, aur customer ke paas koi rasta nahi. Yeh ek **design-level dead-end** tha jo production mein support tickets aur refund requests banata.
+
+**Class freeze hoti hai** (`rejection_class` column), derive nahi — warna reason reclassify hone par purane rejects ka matlab badal jayega.
+
 ---
 
 ## 8. Changelog
@@ -1940,6 +2539,19 @@ Custom card form kabhi nahi. Hosted fields bhi acceptable (iframe), magar Phase 
 
 **Kya nahi badla:** `04` ka `payments`/`invoices` schema structure, subscription state machine, `access_mode` contract, webhook envelope (05 §4.2), renew-link API contract (05 §3.4). Sab extend hue, replace nahi.
 
+### 13 Nov 2026 — review pass (v2)
+
+| # | Kya badla | Kahan | Kyun |
+|---|---|---|---|
+| 1 | **Reject ki do classes** — `RejectionReason` enum (9 values) + `RejectionClass`; CORRECTABLE par **wahi row, wahi `reference_norm`** resubmit (`rejected → awaiting_verification`), LOCKING par reference locked + per-reason unlock policy; naye columns `rejection_class`, `resubmit_count`, `reference_unlocked_at/by/reason`; reject reason table 7 → 9 with class grouping; `payment.resubmitted` + `payment.reference_unlocked` audit events; T5–T5g, T24/T25/T25a/T25b | §1.2 (state graph), §2.3, §2.4.1, **§2.4.3** (rewritten), §2.6.3, §2.7.4, §2.7.5, §5.5, §7 D11 | **v1 design mein ek dead-end tha:** har reject ke baad naya TRX lazmi tha, is liye ek genuine TRX jise "screenshot unclear" par reject kiya gaya permanently dead ho jata — paisa merchant account mein, `reference_norm` unique index mein phansi, customer ke paas koi rasta nahi. `trx_already_used` par unlock **mana** hai kyunke woh structurally double-spend hai |
+| 2 | **Admin notification on `payment.submitted`** — naya `admin_payment_submitted` template, `payments.admin_notify_mode` (`instant\|digest\|off`), recipient setting; queue age badge 4 tiers + `>24h` pin; customer SLA line (`payments.verification_sla_hours`) 3 jagah + breach par line badalti hai | **§2.8.4** (naya), §2.6.1, §2.10 | v1 ne likha tha "admin ko email nahi — queue kaafi hai". Woh ghalat tha: manual TRX mein **admin hi SLA hai**. Bina notification ke payment 12 ghante padi rehti hai aur customer support ko likhta hai. `digest` mode isliye ke 20 instant emails admin ko `off` par dhakel dete hain |
+| 3 | **"Needs accountant confirmation"** — A1–A5 (wallet account type/limits, sales-tax invoice format, numbering/gap rules, registration, fee bearer), sab NOT VERIFIED; `payments.invoice.*` config se drive | **§0.6** (naya), §2.5.1, §2.9.1, §2.9.2, §2.9.3, §7 D3 | v1 mein tax/fiscal claims facts ki tarah likhe thay (fiscal year 1 July, "wallet sender se fee nahi kaatta", gap-free sirf registered invoices par). Yeh **tax/legal** sawal hain, design ke nahi — ghalat invoice format ka natija penalty hai. Ab har cheez config se drive hoti hai, jawab aane par code nahi badlega |
+| 4 | **`APP_KEY` offline backup + rotation** — 5-step procedure, `APP_PREVIOUS_KEYS` verified maujood (`config/app.php:102`), `payments:reencrypt-secrets` command, signed-URL invalidation warning, 10-entry deployment guide delta | **§5.2.1, §5.2.2** (naye), §2.9.4 (link 30d → 7d) | `payment_gateway_accounts.credentials` `encrypted:array` par chalta hai — `APP_KEY` gaya to gateway credentials **mathematically recover nahi**. Aur deployment guide §11 ka `backup.sh` DB dump + `.env` **ek hi bucket** mein bhejta hai, yani encryption ka faida us waqt khatam jab bucket + passphrase mil jaye. Rotation signed URLs (renew-link, invoice links, password reset) bhi invalid karta hai — woh v1 mein likha hi nahi tha |
+| 5 | `04` ke D1/D2 **applied** — `reference_norm` + `unique(gateway, reference_norm)`, `partially_refunded`, T1b, 04 v4 changelog (rows 10–12) | §2.3, §2.3.1, §7 D1/D2 | v1 ne yeh 04 ke liye "pending" chhoda tha; ab 04 aur 06 consistent hain |
+| 6 | 4 stray empty-table artifacts hataye; T-numbering header fix (Phase 1 = T1–T40 + T50–T56, Phase 2 = T41–T49); effort 19d → **21.5d** | poora doc, §5.5, §6.1, §6.3 | Doc hygiene + naye kaam ka effort reflect ho |
+
+**Kul asar:** ek design-level dead-end band (rejected payment ka permanent lock), ek operational gap band (admin ko pata nahi chalta), ek irreversibility risk documented (APP_KEY), aur tax/legal claims ko NOT VERIFIED + configurable banaya. Effort +3.5d (§6.1). Tests T1–T56.
+
 ---
 
-*Yeh document design hai, implementation nahi. NOT VERIFIED: har gateway ka endpoint/field/hash algorithm (V1–V20 — sab official docs se confirm karna hai), `payment_gateway_accounts.credentials` par `encrypted:array` cast ka runtime behaviour (Laravel native hai magar is codebase mein pehli dafa use hoga), dompdf ka Urdu/RTL support, `Storage::response()` ka inline behaviour private disk par, FBR invoice serial requirements, JazzCash TRX ID ka format/length (F13 ke liye), aur merchant onboarding ke actual requirements (providers badalte rehte hain).*
+*Yeh document design hai, implementation nahi. NOT VERIFIED: **A1–A5 tax/legal sawal (§0.6)** — wallet account type/limits, sales-tax invoice format, numbering/gap rules, registration requirement, fee bearer; har gateway ka endpoint/field/hash algorithm (V1–V20 — sab official docs se confirm karna hai); `payment_gateway_accounts.credentials` par `encrypted:array` cast ka runtime behaviour (Laravel native hai magar is codebase mein pehli dafa use hoga); dompdf ka Urdu/RTL support; `Storage::response()` ka inline behaviour private disk par; JazzCash TRX ID ka format/length (F13 ke liye); aur merchant onboarding ke actual requirements (providers badalte rehte hain).*

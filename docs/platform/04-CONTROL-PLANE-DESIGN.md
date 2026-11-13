@@ -328,29 +328,40 @@ invoice_id          foreignId  index constrained('invoices') cascadeOnDelete
 method              string(10)                   // manual|gateway  (derived category, sirf reporting/filter)
 gateway             string(30)  NOT NULL         // manual_easypaisa|manual_jazzcash|jazzcash|easypaisa|card
 status              string(20)  index default 'pending'
-                                                // pending|awaiting_verification|verified|rejected|refunded|failed
+                                                // pending|awaiting_verification|verified|rejected|refunded|partially_refunded|failed
 amount_minor        unsignedBigInteger
 currency            char(3) default 'PKR'
-reference           string(120) nullable  index  // TRX ID / gateway txn id — status >= awaiting_verification par NOT NULL (app)
+reference           string(120) nullable  index  // TRX ID / gateway txn id — jo user ne bheja, RAW (display/audit)
+reference_norm      string(120) nullable         // normalized TRX — duplicate guard (06 §2.3.1)
 gateway_payload     json        nullable
 submitted_by        foreignId  nullable constrained('users') nullOnDelete
 verified_by         foreignId  nullable constrained('users') nullOnDelete
 verified_at         timestamp nullable
 rejection_reason    string(190) nullable
 paid_at             timestamp nullable
-unique (gateway, reference)
-// gateway NOT NULL hai — warna unique(gateway, reference) duplicate TRX IDs nahi rokti.
+unique (gateway, reference_norm)
+// gateway NOT NULL hai — warna duplicate TRX IDs nahi rukti.
 // MySQL (aur SQLite) mein NULL values unique index mein distinct gine jate hain, is liye
 // gateway NULL hone par 'TX123' jitni baar chaho insert ho jata. Phase 1 mein gateway
 // 'manual_easypaisa' / 'manual_jazzcash' hai, NULL nahi — is liye constraint asal mein kaam karti hai.
 //
-// reference nullable hai kyunke payment row checkout par banti hai, TRX ID baad mein aati hai.
-// Jab tak reference NULL hai row unique index mein participate nahi karti (multiple pending
-// payments allowed). App invariant: status 'awaiting_verification' ya usse aage jaye to
-// reference NOT NULL ho, warna validation fail.
+// UNIQUE reference_norm PAR HAI, reference PAR NAHI (06 §2.3.1, D1):
+// exact-string index whitespace/case variants se bypass ho jata hai —
+// '12345 678901' aur '12345678901' dono insert ho jate hain, aur ek hi TRX se kai
+// invoices 'paid' ho sakti hain. reference_norm = uppercase + whitespace-strip
+// (punctuation strip NAHI — 'TX-123' aur 'TX123' do alag IDs ho sakte hain).
+// reference raw rehti hai display/audit ke liye.
 //
-// Do dafa same TRX ID = replay attempt → DB reject (1062) → app 409, payment row create nahi hoti.
+// reference_norm nullable hai kyunke payment row checkout par banti hai, TRX ID baad mein
+// aati hai. Jab tak NULL hai row unique index mein participate nahi karti (multiple pending
+// payments allowed). App invariant: status 'awaiting_verification' ya usse aage jaye to
+// reference_norm NOT NULL ho, warna validation fail.
+//
+// Do dafa same TRX ID = replay attempt → DB reject (1062) → app 409.
+// Reject ke baad resubmission ka rule 06 §2.4.3 mein hai: CORRECTABLE reasons par wahi
+// reference_norm dobara submit hoti hai (same row), LOCKING reasons par admin unlock chahiye.
 index (status, created_at)
+index (gateway, reference_norm, status)
 
 // ── product_oauth_clients ────────────────────────────────────────────────
 // Passport `oauth_clients` ke saath linkage. Passport install NAHI hai (NOT VERIFIED).
@@ -921,7 +932,7 @@ Yeh sab se aam real case hai (product ne payroll hata diya, 40 tenants ne pay ki
 **Phase 1 vs Phase 2:**
 
 - Phase 1 (S0–S9): manual TRX only. `gateway` = `manual_easypaisa` / `manual_jazzcash`, `method = manual`, admin verification queue. `gateway` **NOT NULL** hai — Phase 1 mein bhi null nahi, warna duplicate-TRX constraint bekaar ho jati hai (§1.3).
-- Phase 2: gateway APIs (EasyPaisa/JazzCash/card) — `payments` schema already ready (`gateway`, `gateway_payload`, `unique(gateway, reference)`), sirf callback controller + signature verify + `past_due` transitions chahiye. ~8d.
+- Phase 2: gateway APIs (EasyPaisa/JazzCash/card) — `payments` schema already ready (`gateway`, `gateway_payload`, `unique(gateway, reference_norm)`), sirf callback controller + signature verify + `past_due` transitions chahiye. ~8d.
 
 ### 7.1 Test plan (must-have cases)
 
@@ -929,10 +940,11 @@ S9 ka "feature tests" isi list ko cover karta hai. Har case ek regression jo pai
 
 | # | Test | Kya prove karta hai |
 |---|---|---|
-| **T1** | **Duplicate TRX rejected** — same `gateway` + `reference` par doosra `payments` insert | **DB unique (1062) → app 409; ek hi payment row bachti hai. Yeh test `gateway` NOT NULL ke baghair fail hoga — isi liye Phase 1 mein bhi null nahi.** |
+| **T1** | **Duplicate TRX rejected** — same `gateway` + `reference_norm` par doosra `payments` insert | **DB unique (1062) → app 409; ek hi payment row bachti hai. Yeh test `gateway` NOT NULL ke baghair fail hoga — isi liye Phase 1 mein bhi null nahi.** |
+| **T1b** | Same TRX, alag whitespace/case — `'12345 678901'` phir `'12345678901'` | **1062 → 409. Yeh test `unique(gateway, reference)` par fail hoga (raw string compare), is liye `reference_norm` par hai — 06 §2.3.1** |
 | T2 | Same TRX ID, different gateway | Allowed — `manual_easypaisa` TX1 aur `jazzcash` TX1 do alag rails hain, collision nahi |
-| T3 | Do pending payments, `reference` NULL | Dono insert hoti hain (checkout par row pehle banti hai, TRX baad mein) |
-| T4 | `awaiting_verification` baghair `reference` | Validation fail — app invariant, DB par nahi |
+| T3 | Do pending payments, `reference_norm` NULL | Dono insert hoti hain (checkout par row pehle banti hai, TRX baad mein) |
+| T4 | `awaiting_verification` baghair `reference_norm` | Validation fail — app invariant, DB par nahi |
 | T5 | `active` + `cancel_at_period_end = 1` + `period_end` past → tick | `cancelled`, **`grace` nahi** (scheduler ordering) |
 | T6 | `trialing` + `trial_ends_at` past + `current_period_end` future → tick | `grace` (`trial_ends_at` clock, `current_period_end` nahi) |
 | T7 | `grace` + `grace_ends_at` past → tick | `expired`, event `expired` |
@@ -992,7 +1004,7 @@ Asar: `subscription_events.type` enum mein `refunded` add (§1.3), `payments.sta
 
 | # | Kya badla | Kahan | Kyun |
 |---|---|---|---|
-| 1 | `payments.gateway` **nullable → NOT NULL**, values `manual_easypaisa\|manual_jazzcash\|jazzcash\|easypaisa\|card`; comment corrected; `method` `manual\|gateway` par collapse; T1/T2/T3/T4 tests added | §1.3, §7.1, §7 | `unique(gateway, reference)` NULL gateway ke saath duplicate TRX nahi rokti (NULLs distinct). Purana comment isi ghalti ko justify kar raha tha |
+| 1 | `payments.gateway` **nullable → NOT NULL**, values `manual_easypaisa\|manual_jazzcash\|jazzcash\|easypaisa\|card`; comment corrected; `method` `manual\|gateway` par collapse; T1/T2/T3/T4 tests added | §1.3, §7.1, §7 | `unique(gateway, reference)` NULL gateway ke saath duplicate TRX nahi rokti (NULLs distinct). Purana comment isi ghalti ko justify kar raha tha. (**v4 row 10 ne index `reference_norm` par shift kiya** — gateway NOT NULL wali wajah barqarar hai) |
 | 2 | `subscriptions:tick` order: cancel **pehle**, phir `active → grace` (`cancel_at_period_end = 0` explicit); `trialing` ke liye `trial_ends_at`; T5/T6 tests | §2.3, §7.1 | Purane order mein cancel kiya hua row grace mein chala jata tha; `current_period_end` trial ka clock nahi hai |
 | 3 | `invoice_items.unit_amount_minor` + `amount_minor` **signed `bigInteger`**; totals ka compute/stored rule documented; T8/T9 tests | §1.3, §7.1 | Discount/credit lines negative hoti hain — unsigned column unhein reject karta ya sign kha jata |
 | 4 | `security_events` retention **90 din → 1 saal**, prune command named | §1.2 | §8 Q2 ke saath consistent; `02` §6 ka open question band |
@@ -1008,6 +1020,16 @@ Asar: `subscription_events.type` enum mein `refunded` add (§1.3), `payments.sta
 |---|---|---|---|
 | 8 | `product_oauth_clients.scopes` example `['openid','profile','email','subscriptions:read']` → `['openid','profile','email','subscription','entitlements']` | §1.3 | `05` §1.5 scope set authoritative hai; purana example illustrative tha aur OAuth spec se match nahi karta tha |
 | 9 | `oauth_client_id` ka type note confirm | §1.3 | `05` §0.2 ne verify kiya ke Passport v13.10 client id **UUID** deta hai — `string(64)` sahi choice thi |
+
+### 13 Nov 2026 — cross-doc sync with `06-PAYMENTS-DESIGN.md` (v4)
+
+| # | Kya badla | Kahan | Kyun |
+|---|---|---|---|
+| 10 | `payments.reference_norm string(120) nullable` add; `unique(gateway, reference)` → **`unique(gateway, reference_norm)`**; `index(gateway, reference_norm, status)` add; comment rewrite (normalization rule + resubmission pointer) | §1.3 | **D1 (06 §7).** Exact-string index whitespace/case variants se bypass ho jata hai — `'12345 678901'` aur `'12345678901'` dono insert ho jate hain, aur ek hi TRX se kai invoices `paid` ho sakti hain. Normalization = uppercase + whitespace-strip (punctuation **nahi**, warna do alag IDs merge ho jate). `reference` raw rehti hai display/audit ke liye |
+| 11 | `payments.status` mein **`partially_refunded`** add | §1.3 | **D2 (06 §7).** §8 D4 pehle se `partially_refunded` ka zikr karta tha magar §1.3 ki list mein nahi tha — doc apne aap se inconsistent tha. Ek payment par multiple partial refunds ho sakte hain, is liye amount `payment_refunds` table mein (06 §3.6) |
+| 12 | **T1b** add (whitespace/case variant duplicate), T1/T3/T4 `reference` → `reference_norm`, §7 ka Phase 2 note update | §7.1, §7 | Naya unique index raw-string par nahi chalta; tests usi column ko target karein warna woh green rahenge magar bug zinda rahega |
+
+**Kya nahi badla:** tables ki ginti (18), ERD, state machine, entitlement algorithm, admin screens, storefront, manifest sync, effort. D1/D2 sirf `payments` ki do lines aur unke tests chhoote hain — 06 ne `payments` ko extend kiya hai, replace nahi.
 
 ---
 
