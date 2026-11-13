@@ -109,7 +109,7 @@ composer audit
 
 `shivammathur/setup-php` `sodium` ko `ext-sodium` se map karta hai aur Linux runners par already bundled hota hai — magar explicitly likhna lazmi hai, warna setup action apni default list use karta hai jismein `sodium` guaranteed nahi.
 
-**Server prep checklist** (deploy runbook mein add karein):
+**Server prep checklist** — `09` §1.8 mein poora, verified (yeh summary hai):
 
 ```bash
 # har server par, deploy se PEHLE

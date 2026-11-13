@@ -2272,7 +2272,7 @@ karna ek aisa kaam hai jo kabhi nahi hota, aur uska failure mode irreversible ha
 | **Kab verify** | Har 6 mahine: backup se key utha kar ek known encrypted value decrypt kar ke dekhein. **Bina test kiye backup, backup nahi hai** |
 | **Kabhi nahi** | Git (private repo bhi nahi), ticket/chat, `docs/`, DB, aur **DB dump ke saath wahi bucket** |
 
-**Aakhri point ahem hai aur `docs/02-DEPLOYMENT-GUIDE.md` §11 se seedha nikalta hai.** Wahan ka `backup.sh` DB dump **plaintext** `/var/backups/kb` mein likhta hai, aur `.env` (jismein `APP_KEY` hai) usi directory mein `openssl` se encrypt kar ke rakhta hai — phir dono `rclone` se **usi** remote bucket par jate hain.
+**Aakhri point ahem hai aur `docs/platform/09-DEPLOYMENT-GUIDE.md` §12.2 se seedha nikalta hai.** Wahan ka `backup.sh` DB dump **plaintext** `/var/backups/kb` mein likhta hai, aur `.env` (jismein `APP_KEY` hai) usi directory mein `openssl` se encrypt kar ke rakhta hai — phir dono `rclone` se **usi** remote bucket par jate hain.
 
 Iska matlab: jo `APP_KEY` ko `payment_gateway_accounts.credentials` ki encryption ki asli hijab samajh raha hai, uske liye woh hijab us waqt khatam ho jata hai jab kisi ko backup bucket + `BACKUP_PASSPHRASE` mil jaye. Encryption ka faida sirf "DB mil gaya magar backup bucket nahi" jaisi tang situation mein rehta hai.
 
@@ -2354,20 +2354,20 @@ php artisan config:clear && php artisan config:cache
 
 #### 5.2.2 Deployment guide mein yeh add karna hai
 
-`docs/02-DEPLOYMENT-GUIDE.md` mein payments ke liye yeh entries chahiye (main ne guide ko chheda nahi — yeh list us kaam ke liye hai):
+`docs/platform/09-DEPLOYMENT-GUIDE.md` mein payments ke liye yeh entries chahiye. **Yeh list v3 mein likhi gayi thi; `09` v1 (14 Nov 2026) mein 10/10 address ho chuki hain** — neeche har row ke saamne `09` ka section number diya hai, aur `09` §0.1 mein yeh mapping table bhi maujood hai. Section numbers `09` ke hain, `02` ke nahi (`02` 14 Nov 2026 ko superseded ho gaya — path-based tenancy).
 
-| # | Guide ka section | Kya add hoga |
-|---|---|---|
-| 1 | **§7.1 / §7.2 `.env` templates** | `APP_PREVIOUS_KEYS=` (khali, commented explanation ke saath). `PAYMENTS_PHASE=1` |
-| 2 | **§11 Backups** | Note: `APP_KEY` ki **ek copy backup bucket se bahar** (password manager). Bucket wali copy disaster recovery hai, security backup nahi. Aur: DB dump plaintext hai — `payment_gateway_accounts.credentials` sirf `APP_KEY` se protected hai, is liye dump ko bhi encrypt karein ya access tight karein |
-| 3 | **§11 Backups** | `storage/app/private/attachments` ka backup **already hai** — magar payment proofs 1 saal retention (§5.4) ke saath align karein |
-| 4 | **§16 Security checklist** | `[ ] APP_KEY offline copy password manager mein (2 logon ke paas), 6-mahine test ki hui` |
-| 5 | **§16 Security checklist** | `[ ] APP_PREVIOUS_KEYS khali hai (rotation ke ilawa)` |
-| 6 | **§16 Security checklist** | `[ ]` `payment_gateway_accounts.credentials` encrypt hai (tinker se read kar ke verify) |
-| 7 | **§10 Scheduler** | `subscriptions:remind`, `payments:sla-alert`, `payments:prune-callbacks` (§4.2) |
-| 8 | **§9 Supervisor** | `QUEUE_CONNECTION=database` (aaj `.env` mein `sync` hai) — warna `afterCommit` jobs request ke andar chalenge aur provisioning HTTP call admin ke approve button ko slow karega (§2.7.3) |
-| 9 | **Naya section: "Key rotation runbook"** | §5.2.1 ka 5-step procedure, maintenance window warning ke saath |
-| 10 | **§13 Monitoring** | `payment.verification_pending_count` aur `payment.oldest_pending_age_hours` — alert agar `> sla_hours` (§2.8.4) |
+| # | `09` ka section | Kya add hoga | Status |
+|---|---|---|---|
+| 1 | **`09` §7.1 / §7.2 `.env` templates** | `APP_PREVIOUS_KEYS=` (khali, commented explanation ke saath). `PAYMENTS_PHASE=1` | ✅ done |
+| 2 | **`09` §12.2 Backups** | Note: `APP_KEY` ki **ek copy backup bucket se bahar** (password manager). Bucket wali copy disaster recovery hai, security backup nahi. Aur: DB dump plaintext hai — `payment_gateway_accounts.credentials` sirf `APP_KEY` se protected hai, is liye dump ko bhi encrypt karein ya access tight karein | ✅ done |
+| 3 | **`09` §12.2 Backups** | `storage/app/private/attachments` ka backup **already hai** — magar payment proofs 1 saal retention (§5.4) ke saath align karein | ✅ done — `payment-proofs_*` alag archive, 365 din retention |
+| 4 | **`09` §14.3 Security checklist** | `[ ] APP_KEY offline copy password manager mein (2 logon ke paas), 6-mahine test ki hui` | ✅ done — **magar cadence 6 → 3 mahine** (§5.2.1 blast radius) |
+| 5 | **`09` §14.3 Security checklist** | `[ ] APP_PREVIOUS_KEYS khali hai (rotation ke ilawa)` | ✅ done |
+| 6 | **`09` §14.3 Security checklist** | `[ ]` `payment_gateway_accounts.credentials` encrypt hai (tinker se read kar ke verify) | ✅ done — verify snippet ke saath |
+| 7 | **`09` §10.1 Scheduler** | `subscriptions:remind`, `payments:sla-alert`, `payments:prune-callbacks` (§4.2) | ✅ done — CP par, product par nahi |
+| 8 | **`09` §9 Supervisor** | `QUEUE_CONNECTION=database` (aaj `.env` mein `sync` hai) — warna `afterCommit` jobs request ke andar chalenge aur provisioning HTTP call admin ke approve button ko slow karega (§2.7.3) | ✅ done — `redis`, aur provisioning ki apni queue `--tries=1` ke saath |
+| 9 | **`09` §12.4 "Key rotation runbook"** | §5.2.1 ka 5-step procedure, maintenance window warning ke saath | ✅ done |
+| 10 | **`09` §13.3 Monitoring** | `payment.verification_pending_count` aur `payment.oldest_pending_age_hours` — alert agar `> sla_hours` (§2.8.4) | ✅ done |
 
 ### 5.3 Webhook IP + signature checks (Phase 2)
 

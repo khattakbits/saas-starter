@@ -1,6 +1,30 @@
 # KhattakBits — Deployment Guide (Self-hosted Ubuntu 24.04)
 
-**Scope:** Ek control plane (`khattakbits.com`) + ek product app (`mizaanbitserp.com`) + wildcard tenant subdomains. Same server, alag FPM pools, alag databases, alag `.env`.
+> ## ⚠️ SUPERSEDED — 14 Nov 2026
+>
+> **Yeh document authoritative nahi hai. `docs/platform/09-DEPLOYMENT-GUIDE.md` parhein.**
+>
+> Yeh guide **12 Nov 2026** ko likhi gayi thi — **path-based tenancy ke faisle se pehle** (14 Nov 2026). Us faisle ne is document ke kai hisse ghalaat kar diye:
+>
+> | Yahan | Masla | Sahi kahan |
+> |---|---|---|
+> | §5.3 wildcard tenant subdomain block (`server_name ~^(?<tenant>...`) | Path-based mein `{tenant}` **path segment** hai, hostname nahi. Wildcard block ki zaroorat hi nahi | `09` §4.4 |
+> | §5.3 `fastcgi_param TENANT_SLUG $tenant` | Slug `{tenant}` route param se aata hai (`07` §3.1). Nginx se inject karna host-based resolution wapas laata hai | `09` §4.4 |
+> | §6 DNS-01 wildcard cert + Cloudflare API token | Ek host, ek cert — plain HTTP-01 kaafi hai | `09` §5.1 |
+> | §3 PostgreSQL recommendation | `07` §10.2 ka per-product `GRANT` pattern (`mizaan\_t\_%`) MySQL-specific hai. Postgres mein database-name wildcard grants maujood hi nahi | `09` §2.5 |
+> | §3 ek `kb_app` user with `ALL PRIVILEGES` | `07` §10.2.1: **teen** credentials per product (`_app`, `_provision`, `_backup`), koi global privilege nahi | `09` §3 |
+> | §7.2 `SESSION_DOMAIN=.mizaanbitserp.com` | Path-based mein **host-only** cookie (khali). Poora PSL discussion khatam | `09` §7.3 |
+> | §7.2 koi `KB_*` sso-client keys nahi | `08` §2.2 ka `config/kb.php` | `09` §7.2 |
+> | §9 koi provisioning queue nahi | Provisioning apni queue, apna connection, `--tries=1` | `09` §9.1 |
+> | §11 sirf 2 hardcoded DBs dump karta hai | Central + **saare** tenant DBs | `09` §12.2 |
+> | §15 CI mein `sodium` nahi, private packages nahi | Passport `13.10.*` + `ext-sodium` hard require; `type: path` CI mein fail hota hai | `09` §1.8, §6, §11.4 |
+> | Koi `APP_KEY` offline backup nahi | `06` §5.2.1 ka blast-radius argument | `09` §12.3 |
+>
+> **Kyun delete nahi kiya:** `06` §5.2.1 (line 2275) is document ke §11 ke `backup.sh` ko cite karta hai (APP_KEY aur backup bucket ka trust-boundary argument), aur `06` §5.2.2 iske section numbers reference karta hai. `09` §0.2 mein purane → naye section numbers ka mapping table hai.
+>
+> **Kya abhi bhi yahan se valid hai:** §1 ke server-prep commands (UFW, fail2ban, swap, SSH hardening), §2 ka OPcache/FPM approach, §16 ke compliance items (privacy policy, GDPR) — woh `09` mein dobara nahi likhe gaye.
+
+**Scope (historical):** Ek control plane (`khattakbits.com`) + ek product app (`mizaanbitserp.com`) + wildcard tenant subdomains. Same server, alag FPM pools, alag databases, alag `.env`.
 
 > **Assumption:** Ubuntu 24.04 LTS, root/sudo access, DNS already pointed (A records: `@`, `www`, `*`). Agar Ubuntu 22.04 hai to commands same hain — sirf `ondrej/php` PPA PHP 8.5 support check kar lein.
 

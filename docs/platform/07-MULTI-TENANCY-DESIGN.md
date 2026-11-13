@@ -2046,7 +2046,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES,
   ON `mizaan\_t\_%`.* TO 'mizaan_provision'@'127.0.0.1';
 ```
 
-**`ON *.*` yahan bhi kyun:** MySQL 8.0 mein `CREATE DATABASE` ke liye `CREATE` privilege **global** scope par chahiye — database-scope `CREATE` sirf `CREATE TABLE` deta hai. **`NOT VERIFIED`**: kya MySQL 8.0+ `` GRANT CREATE ON `mizaan\_t\_%`.* `` ko `CREATE DATABASE` ke liye accept karta hai. Verify karne ka tareeqa:
+**`ON *.*` yahan bhi kyun:** MySQL 8.0 mein `CREATE DATABASE` ke liye `CREATE` privilege **global** scope par chahiye — database-scope `CREATE` sirf `CREATE TABLE` deta hai. **`NOT VERIFIED`**: kya MySQL 8.0+ `` GRANT CREATE ON `mizaan\_t\_%`.* `` ko `CREATE DATABASE` ke liye accept karta hai. **`09` §3.3 mein poora probe script hai** (scratch server par, dono outcomes ke liye alag instructions aur Option A ke chaar mitigating controls). Verify karne ka tareeqa:
 
 ```sql
 -- provision user se, ek scratch server par
