@@ -11,11 +11,8 @@
     "license": "proprietary",
     "repositories": [
         {
-            "type": "path",
-            "url": "../khattakbits-core",
-            "options": {
-                "symlink": true
-            }
+            "type": "vcs",
+            "url": "https://github.com/khattakbits/core.git"
         }
     ],
     "require": {
