@@ -26,8 +26,26 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: mbstring, pdo_sqlite, sqlite3, gd, zip, intl
+          # sodium: laravel/passport will not install without it (09 §2.1, §11.4)
+          extensions: mbstring, pdo_sqlite, sqlite3, gd, zip, intl, sodium
           coverage: none
+
+      - name: Verify sodium
+        run: |
+          php -m | grep -qx sodium
+          php -r 'var_dump(function_exists("sodium_crypto_sign_verify_detached"));'
+
+      # Private packages are `type: vcs` in composer.json (09 §6.1). The token is a
+      # fine-grained PAT with `contents:read` on the khattakbits repos (09 §11.4).
+      - name: Configure Composer auth
+        env:
+          COMPOSER_GITHUB_TOKEN: ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+        run: |
+          if [ -z "$COMPOSER_GITHUB_TOKEN" ]; then
+            echo "::error::COMPOSER_GITHUB_TOKEN secret is not set — private khattakbits packages cannot be resolved"
+            exit 1
+          fi
+          composer config --global --auth github-oauth.github.com "$COMPOSER_GITHUB_TOKEN"
 
       - name: Cache Composer packages
         uses: actions/cache@v4
@@ -45,6 +63,20 @@ jobs:
       - name: Install PHP dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
 
+      # RK6 (11 §6): a `path` repository leaves a symlink in vendor/, `composer install`
+      # reports success and the app dies later with "Class not found".
+      - name: Assert private packages are real directories, not symlinks
+        run: |
+          if find vendor/khattakbits -maxdepth 1 -type l 2>/dev/null | grep -q .; then
+            echo "::error::vendor/khattakbits contains symlinks — a path repository is committed, CI cannot install this"
+            find vendor/khattakbits -maxdepth 1 -type l -exec ls -la {} \;
+            exit 1
+          fi
+          ls -la vendor/khattakbits/
+
+      - name: Check platform requirements
+        run: composer check-platform-reqs
+
       - name: Install JS dependencies
         run: npm ci
 
@@ -61,3 +93,6 @@ jobs:
           DB_CONNECTION: sqlite
           DB_DATABASE: ':memory:'
         run: php artisan test
+
+      - name: Check code style
+        run: ./vendor/bin/pint --test
