@@ -19,7 +19,7 @@
 | **08** | [08-EXAMPLE-PRODUCT-INTEGRATION.md](08-EXAMPLE-PRODUCT-INTEGRATION.md) | MizaanbitsERP par poora integration — 8-step registration, `sso-client` package ka real code, E2E runbook + T1–T25, 13.5d |
 | **09** | [09-DEPLOYMENT-GUIDE.md](09-DEPLOYMENT-GUIDE.md) | **Authoritative deployment** — Ubuntu 24.04, MySQL 8.0, per-product DB users, Nginx + plain certbot, Supervisor, backups |
 | **10** | [10-NEW-PRODUCT-PLAYBOOK.md](10-NEW-PRODUCT-PLAYBOOK.md) | Naya product banane ka runbook — day 0 se DoD tak, `kb-product.json` sync, `make:module` v2, entitlement gating, GET read-only gate, 52.5d |
-| **11** | [11-MASTER-ROADMAP.md](11-MASTER-ROADMAP.md) | **Schedule** — P0–P9 dependency order, effort ledger (overlap hata kar), risk register, khule faisle, NEXT 10 ACTIONS |
+| **11** | [11-MASTER-ROADMAP.md](11-MASTER-ROADMAP.md) | **Schedule** — P0–P9 dependency order, **critical path**, **4-week milestone**, **completion %**, **parallel plan**, effort ledger (overlap hata kar), **open estimates (TBD)**, risk register, khule faisle, NEXT 10 ACTIONS |
 
 ---
 

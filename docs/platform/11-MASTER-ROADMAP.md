@@ -1,7 +1,7 @@
 # 11 — Master Roadmap
 
 **Status:** Execution plan (design, code nahi)
-**Date:** 14 Nov 2026
+**Date:** 14 Nov 2026 · **Revised:** 14 Nov 2026 (**v2** — critical path, 4-week milestone, completion %, parallel plan, open estimates, P5/MVP arithmetic; changelog §9)
 **Depends on:** `02` (decisions + versioning), `03` (Part D — D2/D3), `04` (CP build order §7), `05` (§8 effort), `06` (§6 effort), `07` (§12 effort), `08` (§5 effort), `09` (deployment), `10` (§11 timeline)
 
 > **Yeh roadmap `kya`, `kis order`, aur `kitne din` ka jawab deta hai.** `kaise` ka jawab `02`–`10` mein hai — yahan koi design dohraaya nahi gaya.
@@ -69,6 +69,40 @@ Yeh section **claims** nahi, repo ki asli haalat hai:
 | Docs | `02`–`10` complete, `09` authoritative over old `docs/02-DEPLOYMENT-GUIDE.md` | `docs/platform/README.md` |
 
 **Yani:** design 100% done hai, implementation 0% — magar **extraction** ho chuki hai (packages alag repos mein, namespaces `KhattakBits\`). Yeh achhi khabar hai: Phase 0 ka sab se bara kaam ho chuka hai.
+
+### 1.1 Completion % — aaj vs har phase ke baad
+
+**Yeh table estimate hai, claim nahi.** Har row ka **basis** likha hua hai, aur har row **ek hi** basis par hai (Days, Tables ya Screens) — do areas ka denominator hi nahi hai, wahan TBD:
+
+| Basis | Matlab |
+|---|---|
+| **Days** | Us area ke documented days ka kitna hissa ho chuka — `04` §7, `05` §8, `06` §6.1, `07` §12.1, `08` §5 |
+| **Tables** | `04` §1.3 ke 18 tables mein se kitne (`04` §7 ke sprint-wise list se) |
+| **Screens** | `04` §7 ke 28 admin screens mein se kitne |
+| **TBD** | Docs mein is area ka **denominator** nahi hai — guess nahi kiya |
+
+"Aaj" column `docs/01-STATUS-REPORT.md` ke executive summary se hai (0 / 15 / 80 / 0 / 12 / 35 / ~24). Uske baad ka har column **PLANNING ASSUMPTION** hai, magar har number neeche diye gaye formula se nikla hai — hawa se nahi.
+
+| Area | Basis | Aaj | P0 | P1 | P2 | P3 | P4 | P5 | P6 | P7 | Phase 2 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Control Plane** (catalog, plans, subs, billing) | Days 65 = P2 40 + P4 25 | 0 % | 0 % | 0 % | 62 % | 62 % | 100 % | 100 % | 100 % | 100 % | 100 % |
+| **Identity Hub / SSO** | Days 27.5 (`05` §8) | 15 % | 15 % | 15 % | 15 % | 100 % | 100 % | 100 % | 100 % | 100 % | 100 % |
+| **Starter Kit** | TBD (denominator nahi) | 80 % | 80 % | 80 % | 80 % | 80 % | 80 % | 80 % | 80 % | 80 % | 80 % |
+| **Multi-tenancy** | Days 33 = D2 2.5 + P5 15.5 + P9 15 | 0 % | 8 % | 8 % | 8 % | 8 % | 8 % | 55 % | 55 % | 55 % | 100 % |
+| **Admin Panel** | Screens 28 (`04` §7) | 12 % | 12 % | 12 % | 75 % | 82 % | 100 % | 100 % | 100 % | 100 % | 100 % |
+| **Deployment readiness** | TBD (`09` mein estimate nahi) | 35 % | TBD | TBD | TBD | TBD | TBD | TBD | 100 % | 100 % | 100 % |
+| **OVERALL** | Days 166.5 (`11` §5.3) | ~24 % | 27 % | 27 % | 45 % | 58 % | 69 % | 77 % | TBD | 100 % | — |
+
+**Numbers kaise nikle — teen formulas:**
+
+1. **Control Plane 62 %** = `04` §7 ka P2 (40d) ÷ (P2 40 + P4 25). `04` ka S4 (billing) aur S6 (OAuth) `06`/`05` ne replace kiye, is liye CP ka poora scope 65d hai (`11` §0.2). P3 CP ke catalog mein kuch nahi jorrta — `62 %` wahi rehta hai.
+2. **Admin Panel 75 %** = `04` §7 ke screens: S1 (1–7) + S2 (8–10) + S3 (11–13, 19–20) + S7 (23–24) + S8 (25–28) = **21 / 28**. P3 mein S6 ke screens 21–22 aate hain → **23 / 28 = 82 %**. P4 mein S4 ke 14–18 → **28 / 28**.
+3. **OVERALL** = `24 % + 76 % × (cumulative days ÷ 166.5)`. **Seedha `days ÷ 166.5` nahi kiya** — 166.5 **baaqi** kaam hai, total lifetime kaam nahi. Warna P0 ke baad `6 ÷ 166.5 = 4 %` aata, jo aaj ke 24 % se **neeche** hota. Cumulative days: P0 6.0, P1 7.0, P2 47.0, P3 74.5, P4 99.5, P5 115.0, P7 166.5.
+
+**Do rows jaan boojh kar adhoore hain:**
+
+- **Starter Kit 80 % par flat** — `03`–`09` mein is area ka koi denominator nahi. P0 ka 3.5d package work (`03` D3) isi area ka hai, magar 3.5d ko "80 % → X %" mein badalne ka koi doc number nahi. **TBD.**
+- **Deployment readiness** — 35 % se 100 % ka safar `09` par hai, aur `09` mein **koi effort number nahi** (§5.5). P0 ka CI fix (vcs + `sodium`) is row ko "35 % se kuch upar" le jata hai, magar kitna — TBD.
 
 ---
 
@@ -138,6 +172,160 @@ Yeh section **claims** nahi, repo ki asli haalat hai:
 
 **Phase 1 = P0 → P7 = 166.5 din.** Hisaab §5 mein.
 
+### 3.1 Critical path — poora platform
+
+**166.5 din sum hai, critical path nahi.** Critical path woh sab se lambi zanjir hai jo kisi bhi phase ko aage nahi barhne deti. §2 ka graph dependencies dikhata hai magar duration ke saath chain nahi nikalta — yeh table woh karti hai.
+
+| # | Phase | Din | Cumulative | Float | Source |
+|---|---|---|---|---|---|
+| 1 | **P0** | 6.0 | 6.0 | **0** | §5.3 |
+| 2 | **P2** | 40.0 | 46.0 | **0** | `04` §7 |
+| 3 | **P3** | 27.5 | 73.5 | **0** | `05` §8 |
+| 4 | **P6** | **TBD** | TBD | **0** | `09` — koi estimate nahi (§5.5) |
+| 5 | **P7** | 51.5 | **125.0 + P6** | **0** | `08` §5 (12.5) + `10` §11 (39) |
+| | **Critical path total** | | **125.0 din + P6** | | |
+
+**Critical path se bahar (float ke saath):**
+
+| Phase | Din | Cumulative end | Float | Kyun float hai |
+|---|---|---|---|---|
+| P1 | 1.0 | 7.0 | 66.5 | Sirf P7 ko chahiye, aur P7 `P6 + 73.5` par shuru hota hai |
+| P4 | 25.0 | 71.0 | **2.5** | P6 ke liye zaroori hai, magar P3 se **2.5 din pehle** khatam hota hai |
+| P5 | 15.5 | 21.5 | 52.0 | P2/P3 ke saath parallel chalta hai (§3.3) |
+
+**Teen nateeje jo is table se nikalte hain:**
+
+1. **P4 (payments) takriban critical hai — float sirf 2.5 din.** `11` §3 ise "P3 ke baad" likhta hai, magar P6 ko P3, P4 aur P5 teenon chahiye. Agar P3 do din slip kare to P4 critical path par aa jata hai, aur uske baad **payments ki ek din ki slip poore platform ki ek din ki slip** hai. Is liye P4 ke liye buffer P3 ke andar rakhna behtar hai, P4 ke andar nahi.
+2. **P5 ka float sab se zyada (52 din)** — usay P2/P3 ke saath parallel chalana "achhi practice" nahi, **lazmi** hai; warna woh critical path par aa jata.
+3. **P6 poora platform rok deta hai.** Deployment ka koi estimate nahi hai (`09`), magar woh critical path ke beech mein baithta hai — yani **P6 ka estimate P7 se pehle chahiye**, P6 ke waqt nahi. Yeh §5.5 ka sab se bara khula item hai.
+
+**P2 ke andar ka critical path** (alag level, `04` §7 se): **S1 → S2 → S3 → S4 → S6**. S5 (storefront) S2 ke baad shuru ho sakta hai magar checkout S4 par rukta hai; S7/S8/S9 float rakhte hain.
+
+### 3.2 Pehla milestone — 4 hafte
+
+**Definition:** P0 poora (D2 + D3 + `core` v2.0.0 tagged) **+** CI `vcs` repositories par green **+** P1 skeleton **+** `04` S0 **+** `04` S1 (CP ek product ka manifest import kar ke catalog mein daalta hai) **+** CP staging par deploy.
+
+| # | Deliverable | Din | Source |
+|---|---|---|---|
+| 1 | P0 — D2 split + D3 `core` v2.0.0 + D4 `UPGRADE.md` | 6.0 | §4.1 = `07` §12.1 #2 (2.5) + package (3.5) |
+| 2 | CI green on `vcs` repositories (PHP 8.3 + 8.5) | — | `09` §6.1, §11.4 — **koi estimate nahi**, is liye 0 |
+| 3 | P1 — `khattakbits/sso-client` skeleton | 1.0 | `08` §5 #1 |
+| 4 | `04` **S0** — MySQL, `security_events`, Passport, `khattakbits:manifest` skeleton | 2.0 | `04` §7 |
+| 5 | `04` **S1** — catalog 5 tables + screens 1–7 + manifest sync | 6.0 | `04` §7 |
+| | **Total — docs se** | **15.0** | |
+| 6 | CP staging deploy (§4.3.1) | 1.0 | **PLANNING ASSUMPTION** — `09` mein number nahi |
+| | **Total** | **16.0** | |
+
+**Calendar:** 16.0 × 1.2 (20 % buffer, `11` §5.4) = **19.2 din = 3.8 hafte ≈ 4 hafte**. Buffer ke baghair 16.0 din = 3.2 hafte — yani 4 hafte **buffer ke saath** hain, buffer ke baghair nahi.
+
+**Exit criteria — command, opinion nahi:**
+
+```bash
+php artisan test --filter=MigrationSplitTest          # green (03 D2)
+php artisan migrate --pretend | grep -c "create table" # CP par 23 — §4.1.1 dekhein
+php artisan khattakbits:manifest --check               # 10 §4.3
+php artisan test --filter=ManifestImportTest           # V1–V4, 10 §4.6.3
+ls -la vendor/khattakbits/                             # directory, symlink NAHI (09 §6.4)
+curl -sI https://staging.khattakbits.com/up | head -1  # 200
+```
+
+**Purana milestone idea kyun nahi:** "SSO login kaam kare + tenant provisioned ho + product `read_only` ho" — yeh sunne mein chhota lagta hai, magar uske liye poora CP ka core, poora OAuth layer, aur poora P5 chahiye:
+
+| # | Task | Din | Source |
+|---|---|---|---|
+| 1 | P0 | 6.0 | §5.3 |
+| 2 | P1 skeleton | 1.0 | `08` §5 #1 |
+| 3 | `04` S0 | 2.0 | `04` §7 |
+| 4 | `04` S1 (catalog) | 6.0 | `04` §7 |
+| 5 | `04` S2 (plans + entitlements) | 6.0 | `04` §7 |
+| 6 | `04` S3 (tenants + subscriptions + provisioning client) | 7.0 | `04` §7 |
+| 7 | `05` I0 (Passport + `sodium` + core release) | 2.0 | `05` §8 |
+| 8 | `05` I1 (clients, allowlist, PKCE) | 4.0 | `05` §8 |
+| 9 | `05` I2 (OIDC, JWKS, discovery) | 3.0 | `05` §8 |
+| 10 | `05` I3 (login interrupt) | 3.0 | `05` §8 |
+| 11 | `05` I4 (resolve, entitlements, changes feed) | 4.5 | `05` §8 |
+| 12 | `05` I8 (`users/tenants` — SSO callback ke baad picker iske baghair nahi chalta) | 1.0 | `05` §8 |
+| 13 | P5 (path-based tenancy, 18 items − P0 ka hissa) | 15.5 | §4.6 |
+| | **Total** | **61.0** | |
+
+**61.0 din = 12.2 hafte solo; 20 % buffer ke saath 73.2 din ≈ 14.6 hafte ≈ 3.5 mahine.** Yani "SSO + provisioned + `read_only`" **4 hafte ka milestone nahi, ek quarter ka** hai — aur usmein storefront, payments, webhooks, hardening kuch bhi nahi.
+
+### 3.3 Parallel plan — solo vs 2 devs
+
+**Solo:** koi phase parallel nahi — §5.3 ka 166.5 din sequential hai. **2 devs:** har phase ke andar kya saath chal sakta hai, woh docs khud batate hain; jahan nahi batate wahan TBD.
+
+| Phase | Solo | Andar kya parallel chalta hai | 2 devs | Source |
+|---|---|---|---|---|
+| P0 | 6.0 | **Kuch nahi** — D2/D3 package contract torte hain, sequence lazmi hai | 6.0 | `11` §4.1 ("Parallel: kuch nahi") |
+| P1 | 1.0 | — | 1.0 | `08` §5 |
+| P2 | 40.0 | S5 / S6 / S7 parallel; **S1 → S2 → S3 → S4 sequential** | **~27.5** | `04` §7 ("2 devs par ~5.5 hafte") |
+| P3 | 27.5 | I2 ∥ I3, I5 ∥ I6; **I1 → I4 sequential** | **~15.0** | `05` §8 ("2 devs par ~3 hafte") |
+| P4 | 25.0 | P1.2 ∥ P1.3; P1.4 P1.0 ke baad independent | **~15.0** | `06` §6.1 ("2 devs par ~3 hafte") |
+| P5 | 15.5 | P2/P3 ke saath **phase-level** parallel (`11` §3) | **TBD** | `07` §12.1 mein 2-dev number nahi |
+| P6 | **TBD** | — | **TBD** | `09` |
+| P7 | 51.5 | 7a (wiring) ∥ 7b (product modules) | **TBD** | `08` §5, `10` §11 mein 2-dev number nahi |
+| P8 | 20.0 | P9 ke saath parallel | **TBD** | `06` §6.2 |
+| P9 | 15.0 | P8 ke saath parallel | **TBD** | `07` §13.8 |
+
+**Do phase-level parallelisms jo calendar badalte hain** (`11` §3):
+
+| Jo saath chalta hai | Kyun safe hai | Kitna bachta hai |
+|---|---|---|
+| **P2 ∥ P5** | P5 product repo hai, P2 CP repo — sirf `GET /api/v1/users/tenants` par milte hain (woh P3/I8 mein) | P5 ka poora 15.5 |
+| **P8 ∥ P9** | Payments Phase 2 aur custom domains ka koi shared file nahi | chhota |
+
+**2-dev total: 93.2 din** (`11` §5.4, ratio 0.56) — **PLANNING ASSUMPTION**, kyunke 0.56 teen alag ratios (`04` 0.55, `05` 0.55, `06` 0.60) ka mean hai, kisi doc ne poore platform ka 2-dev number nahi diya. Upar ki per-phase rows jama karne se 2-dev number **93.2 se thoda kam** aata hai (P5/P6/P7 ka TBD hai), is liye 93.2 ko **upper bound** samjhein.
+
+**2 devs par kya *nahi* tez hota:**
+
+- **P0** — ek hi package contract hai; do log ek hi `UPGRADE.md` likh rahe hon to ulta slow.
+- **P6** — deployment ek server par hota hai; parallel karne ke liye do environments chahiye, jo khud kaam hai.
+- **P7b** — pehla product ek hi product hai; modules parallel ho sakte hain magar manifest/entitlement contract pehle tay hona chahiye (`10` §4).
+
+### 3.4 Alternative ordering — "vertical slice first"
+
+**Masla:** §3 ka order CP ko **poora** banata hai (S0–S9, 40 din), phir identity (27.5), phir product (15.5), phir wiring (51.5). Yani pehla **asli** loop — ek tenant, SSO se login, `read_only` gate — **~96 din + P6** baad chalta hai. Us waqt tak koi bhi cheez asli user ke haath mein nahi hoti.
+
+**Alternative:** patla vertical slice pehle — poora CP nahi, sirf utna jitna loop ke liye chahiye.
+
+| Step | Kya | Din | Source |
+|---|---|---|---|
+| 1 | P0 — baseline + D2 + D3 | 6.0 | §5.3 |
+| 2 | P1 — `sso-client` skeleton | 1.0 | `08` §5 #1 |
+| 3 | CP-lite: **S0 + S1 + S2 + S3** (storefront/payments/webhooks/hardening **nahi**) | 21.0 | `04` §7 (2+6+6+7) |
+| 4 | Identity: **I0–I4 + I8** | 17.5 | `05` §8 (2+4+3+3+4.5+1) |
+| 5 | P5 — path-based tenancy | 15.5 | §4.6 |
+| | **CP-side loop (ek test tenant, `tenants:provision` se)** | **61.0** | |
+| 6 | `08` §5 #2–#5 — product side: PKCE, mirror, resolve ladder, guards | 6.0 | `08` §5 (1.5+1.5+1.5+1.0) |
+| | **End-to-end loop (product SSO se login karta hai, `read_only` lagta hai)** | **67.0** | |
+
+**Wohi loop, maujooda order par:**
+
+| Step | Kya | Din | Source |
+|---|---|---|---|
+| 1 | P0 + P1 | 7.0 | §5.3, `08` §5 #1 |
+| 2 | P2 poora (S0–S9) | 40.0 | `04` §7 |
+| 3 | P3 poora (I0–I9) | 27.5 | `05` §8 |
+| 4 | P5 | 15.5 | §4.6 |
+| 5 | P6 | **TBD** | `09` |
+| 6 | Product wiring (wahi 6.0 din) | 6.0 | `08` §5 #2–#5 |
+| | **End-to-end loop** | **96.0 + P6** | |
+
+**Farq: 67.0 vs 96.0 + P6 → ~29 din (≈ 6 hafte) pehle.** Aur yeh farq **kam** nahi hota — `09` ka P6 estimate jitna bhi ho, woh maujooda order mein loop se **pehle** aata hai, vertical slice mein **baad** mein.
+
+**Kya peeche chhoot jata hai (aur uski qeemat):**
+
+| Chhoda | Din | Qeemat |
+|---|---|---|
+| `04` S4 → `06` P1.2–P1.4 (billing) | 6 → 13 | Loop ke liye zaroori nahi; subscription manually S3 ke screens 11–13 se ban jati hai |
+| `04` S5 (storefront) | 6.0 | Koi self-serve nahi — onboarding manual |
+| `04` S7 (webhooks) + `05` I5 | 4 + 3 | `tenant.provisioned` product tak nahi pahunchta → `tenants:provision` manually (`07` §12.1 #6) |
+| `04` S8 (access screens) | 4.0 | `kb_user_product_access` baad mein — data model par asar padega |
+| `04` S9 + `05` I7 (hardening + tests) | 5 + 3 | **Sab se mehnga trade-off**: `GetRoutesAreReadOnlyTest` gate (`05` §7.1) late aata hai, aur tests ka bojh end par |
+| `05` I6, I9 | 3 + 1 | **Loop** ke liye zaroori nahi — magar I6 **MVP** ke liye blocking hai (§5.4), is liye yeh slice se MVP tak ka farq hai |
+
+**Ordering badalti hai, total nahi:** 166.5 din wahi rehta hai (§5.3). Vertical slice sirf **risk ka distribution** badalta hai — pehla asli loop 96 + P6 din ke bajaye **67 din (≈ 13 hafte)** par aata hai, magar aakhri 30 din mein teen badi cheezein (storefront, webhooks, hardening) ek saath aati hain. **Pehla milestone** (§3.2) dono orders mein wahi rehta hai — 4 hafte — kyunke woh P0/S1 tak hi jaata hai.
+
 ---
 
 ## 4. Phases — tafseel
@@ -150,13 +338,16 @@ Yeh section **claims** nahi, repo ki asli haalat hai:
 |---|---|---|
 | 1 | `git tag pre-tenancy` (aaj sirf `pre-extraction` hai) | `03` Part D |
 | 2 | `database/migrations/{central,tenant}/` — **4 central, 11 tenant** | `03` D2 |
-| 3 | `CoreServiceProvider` mein do `loadMigrationsFrom()` + `ModuleRegistry::migrationPaths()` | `03` D2.1, `07` §7.3 |
+| 3 | `CoreServiceProvider`: **central** paths `loadMigrationsFrom()`, **tenant** paths `tenancy.migration_parameters['--path']` mein — tenant ke liye `loadMigrationsFrom()` **nahi** | `03` D2.1, `07` §7.3 |
+| 3b | **CP single-DB flag** — tenancy na ho to tenant paths bhi chalein (§4.1.1) | **GAP — `03` D2 mein nahi** |
 | 4 | `core` routes ka split — `attachments` + `document-activity` `{tenant}` ke andar | `03` D3.1, `07` §3.4 |
 | 5 | `menu.php` contract mein `path` key (static) + `href` (runtime) | `03` D3.2, `07` §5.3 |
 | 6 | `khattakbits/core` **v2.0.0** tag + `UPGRADE.md` (codemod C1–C6) | `03` D3, D4 |
 | 7 | `MigrationSplitTest` (permanent) | `03` D2, `10` §2.5 |
 
-**Effort:** `07` §12.1 #2 = **2.5d** (isme Step 0 cross-DB FK shamil hai jo `03` D1 mein **ho chuka** — is liye asli bacha hua kaam is se kam hai, magar doc ne alag number nahi diya) + package work **3.5d** (`07` §12.1, "~3.5 din ismein shamil hain").
+> **Row 3 pehle galat likha hua tha** — "do `loadMigrationsFrom()`" `03` D2.1 ke trap #1 ke bilkul khilaf hai: tenant paths ko `loadMigrationsFrom()` se register karna unhein `php artisan migrate` par **central DB** mein chala dega. Sahi shakal row 3 mein hai.
+
+**Effort:** `07` §12.1 #2 = **2.5d** (isme Step 0 cross-DB FK shamil hai jo `03` D1 mein **ho chuka** — is liye asli bacha hua kaam is se kam hai, magar doc ne alag number nahi diya) + package work **3.5d** (`07` §12.1, "~3.5 din ismein shamil hain") + row 3b ka **TBD** (§4.1.1).
 
 **Done when:**
 
@@ -169,9 +360,12 @@ grep -rn "constrained('users')\|references('users')" \
   database/migrations vendor/khattakbits/core/database/migrations
 # → tenant tables mein zero hit
 
-# 3. Tenant migrate sirf 11 chalaye, central sirf 4
-php artisan migrate --pretend | grep -c "create table"     # → 4
-php artisan tenants:migrate --pretend | grep -c "create table"  # → 11
+# 3. Split sahi hai — ginti statements mein, migrations mein nahi (§4.1.1)
+php artisan migrate --pretend | grep -c "create table"
+#   CP (single DB):        → 23   = 8 central + 14 tenant + 1 module
+#   Product (tenancy):     → 8    central + module-central
+php artisan tenants:migrate --pretend | grep -c "create table"
+#   Product:               → 14   tenant + module-tenant
 
 # 4. Purana behaviour toota nahi
 php artisan test && vendor/bin/pint --test
@@ -180,7 +374,45 @@ php artisan test && vendor/bin/pint --test
 git tag -l 'pre-*'   # → pre-extraction, pre-tenancy
 ```
 
+> **`→ 4` aur `→ 11` (v1) galat thay.** Woh **migration files** ki ginti thi; `grep -c "create table"` **statements** ginta hai. Aaj split se pehle hi `php artisan migrate --pretend | grep -c "create table"` **23** deta hai (verified 14 Nov 2026: 8 central + 14 tenant + 1 module `demo_entries`) — 15 migration files se 23 tables. Aur CP par 4 hona **bug** hai, acceptance nahi — wajah §4.1.1 mein.
+
 **Parallel:** kuch nahi — yeh blocking hai.
+
+#### 4.1.1 CP single-DB — tenant migrations kaise chalti hain? (**GAP**)
+
+**Do facts jo takraate hain:**
+
+| Fact | Source |
+|---|---|
+| CP **single DB** hai, `stancl/tenancy` CP mein **nahi** | `04` §7 scope note: "`stancl/tenancy` **is CP mein nahi** — CP single DB hai" |
+| Tenant migrations `loadMigrationsFrom()` se register **nahi** hotin; sirf `tenancy.migration_parameters['--path']` mein jati hain, aur woh block `class_exists(\Stancl\Tenancy\Tenancy::class)` ke andar hai | `03` D2.1, `07` §7.3 |
+
+**Nateeja:** CP mein tenancy package nahi → `class_exists` false → woh block **skip** → tenant paths kahin register nahi → `php artisan migrate` sirf `central/` chalata hai. CP ke paas `audit_logs`, `settings`, `email_accounts`, `email_logs`, `email_templates`, `attachments`, `documents`, `permissions`/`roles` — **kuch nahi**. Pehla page render 500 dega (`Table 'audit_logs' doesn't exist`).
+
+**`07` §7.3 ka note 2 is maamle mein ghalat hai:** "Tenancy na ho to yeh block skip ho jata hai aur starter kit single-tenant chalta rehta hai." Skip hona **sahi** hai, magar single-tenant app ko un tables ki zaroorat **hoti hai** — woh sirf "ek tenant" hai, "zero tables" nahi. `03` D2 ne yeh case likha hi nahi; `07` ne CP ko single-tenant samajh kar chhor diya.
+
+**Mechanism — teen options, ek recommended:**
+
+| Option | Kya | Verdict |
+|---|---|---|
+| **A** | Config flag: `config('khattakbits.migrations.tenant_in_central')` (env `KB_TENANT_MIGRATIONS_IN_CENTRAL`). `true` ho to provider tenant paths ko bhi `loadMigrationsFrom()` kare | **Recommended.** `core` ko tenancy ka pata nahi chalta (`class_exists` guard bacha rehta hai), aur CP sirf `.env` se farq karta hai |
+| B | CP ki apni `database/migrations/` mein duplicate stub migrations | **Nahi** — `03` D2.2 ki filename immutability torta hai; same filename do jagah = "table already exists" |
+| C | CP mein `stancl/tenancy` install kar ke single-tenant mode | **Nahi** — `04` §7 ke scope note ke khilaf, aur CP ko multi-DB machinery ki zaroorat nahi |
+
+**Option A ke saath numbers:**
+
+| App | `php artisan migrate` | `tenants:migrate` |
+|---|---|---|
+| **CP** (`tenant_in_central=true`) | **23** tables (8 central + 14 tenant + 1 module) | — |
+| **Product** (`false`, tenancy installed) | 8 central + modules ka central hissa | 14 tenant + modules ka tenant hissa |
+
+**Filename immutability is kaam ko sasta karti hai.** `03` D2.2 kehta hai folder badle, filename na badle. CP ki `migrations` table mein purane naam already hain, aur naye folder mein **wohi** naam hain — Laravel migration ko **basename** se match karta hai, path se nahi. Is liye CP par sirf **path registration** chahiye, koi data migration ya rename nahi.
+
+**Module migrations bhi isi flag ke saath chalni chahiye.** Aaj `demo_entries` module ki migration usi ek DB mein banti hai (`ModuleRegistry` ke through) — pretend run mein woh 23vin table hai. Split ke baad `ModuleRegistry::migrationPaths('central'|'tenant')` do list deta hai; CP ko **dono** ek hi DB mein chahiye, warna module tables CP se gayab ho jayengi. Yeh `03` D2.1 mein likha hi nahi.
+
+**Effort: TBD.** `03` D2 ka 2.5d sirf split + Step 0 cover karta hai; yeh flag + uske tests usmein nahi hain. Chhota kaam lagta hai (ek config key + provider ki ek branch + ek test), magar **guess nahi karunga** — `03` D2 mein add hone ke baad hi number aayega.
+
+**Test jo abhi maujood nahi:** `MigrationSplitTest` (`03` D2.2) sirf **product** side prove karta hai (tenant DB mein `users` nahi, `attachments` hai). CP ke liye alag test chahiye — masalan `CentralSchemaParityTest`: CP par `migrate` chalayein aur assert karein ke `audit_logs`, `settings`, `attachments`, `documents`, `email_*`, `permissions` sab maujood hain. **Yeh test P0 ke scope mein add karna hoga, warna CP tootne ka pata staging par chalega.**
 
 ---
 
@@ -228,18 +460,22 @@ php artisan migrate
 
 **S4 (6d) kahan gaya:** `06` P1.2–P1.4 wohi kaam karta hai (checkout, TRX queue, verification, invoice PDF) — magar **zyada tafseel se** (resubmit/unlock flows, SLA badges, 4 email templates). Dono karna duplicate hai.
 
-**S6 (5d) kahan gaya:** `05` I1–I4 wohi kaam karta hai (Passport clients, redirect allowlist, PKCE, `/oauth/userinfo`, `resolve` ETag/304, `renew-link`) — 12.5 din mein, kyunke `05` ne poora OIDC layer + login interrupt + users-changes feed add kiya.
+**S6 (5d) kahan gaya:** `05` I1–I4 wohi kaam karta hai (Passport clients, redirect allowlist, PKCE, `/oauth/userinfo`, `resolve` ETag/304, `renew-link`) — **14.5 din mein** (`05` §8: 4 + 3 + 3 + 4.5), kyunke `05` ne poora OIDC layer + login interrupt + users-changes feed add kiya.
+
+**Staging gate — S1 ke baad:** CP staging par deploy hota hai (§4.3.1), aur uske baad **har phase ka "done when" staging par bhi true hona chahiye**.
 
 **Done when:**
 
 ```bash
-# 18 tables + 28 admin screens
-php artisan migrate --pretend | grep -c "create table"        # → 18 (04 §1.3)
+# 18 CP tables — absolute count se compare na karein (core + module tables bhi isi DB mein hain)
 php artisan test --filter=ManifestImportTest                   # V1–V4 green (10 §4.6.3)
 php artisan platform:rehash --dry-run                          # idempotent: second run 0 changes
 php artisan db:seed --class=DemoProductSeeder                  # 1 product, 4 modules, 3 plans
 php artisan test --filter=GetRoutesAreReadOnlyTest             # 05 §7.1 gate
+php artisan tinker --execute 'echo Schema::hasTable("product_reports") ? "ok" : "missing";'
 ```
+
+> **`→ 18` (v1) galat tha:** `grep -c "create table"` CP ki **saari** tables ginta hai — 18 CP tables + core central (8) + module tables. Is liye `Schema::hasTable()` se assert karein, absolute number se nahi (module add hone par number badalta rehta hai).
 
 | Test | Kya prove karta hai |
 |---|---|
@@ -249,6 +485,26 @@ php artisan test --filter=GetRoutesAreReadOnlyTest             # 05 §7.1 gate
 | `GetRoutesAreReadOnlyTest` | Koi GET route data nahi likhta (`05` §7.1) |
 
 **Parallel:** P5 (tenancy) — sirf `GET /api/v1/users/tenants` par milta hai jo P3 mein hai.
+
+#### 4.3.1 Staging gate — S1 ke baad, hamesha ke liye
+
+**Rule:** `04` S1 khatam hone ke foran baad CP staging par deploy hota hai. Uske baad **har phase ka "done when" staging par bhi pass hona chahiye** — local `php artisan test` green hona kaafi nahi.
+
+**Kyun S1 ke baad, S0 ke baad nahi:** S0 mein deploy karne ko kuch nahi (sirf Passport + ek command skeleton). S1 pehla sprint hai jo asli product data banata hai, aur uske baad har sprint (S2, S3, S5…) usi DB par migrate karta hai — staging woh jagah hai jahan **migration + deploy ka order pehli dafa asli MySQL par** chalta hai, kyunke tests SQLite par chalte hain.
+
+**Effort: 1.0 din — PLANNING ASSUMPTION.** `09` mein **koi estimate nahi** hai (§5.5). 1.0d sirf **pehli dafa** ka hai (`09` §1–§4 server prep + `09` §8.2 clone → composer → key → migrate); har agla deploy `09` §11 ke CI/CD se hota hai aur uski mehnat phase ke andar nahi gini gayi.
+
+**Checklist (S1 ke baad, aur har phase ke baad):**
+
+```bash
+curl -sI https://staging.khattakbits.com/up | head -1   # 200
+php artisan about --only=environment                    # production, debug=false
+php artisan migrate:status | grep -c Pending            # 0
+```
+
+**Staging par woh teen `NOT VERIFIED` items bhi test hote hain** jo `09` §0.5 mein hain — `GRANT CREATE ON \`prefix\_t\_%\`.*` ka probe (`09` §3.3 khud kehta hai "scratch/staging MySQL par, production par NAHI"), certbot deploy-hook reload, aur `tenants:migrate` rollback. Yeh production par pehli dafa test karna matlab production ko test environment banana.
+
+**Kya staging gate *nahi* hai:** yeh acceptance test nahi, sirf **smoke** hai — functional assertions abhi bhi `php artisan test` se aati hain. Iska kaam sirf ek cheez pakadna hai: "local par chalta hai, server par nahi" wali class (`.env`, queue, MySQL vs SQLite, `storage` permissions).
 
 ---
 
@@ -327,28 +583,38 @@ php artisan schedule:list | grep -E "remind|sla-alert"
 
 ### 4.6 P5 — Tenancy in product (`07`) — 15.5 din
 
-**`07` §12.1 ke 18 items, minus #2 (D2, P0 mein) aur package work (D3, P0 mein).**
+**`07` §12.1 ke 18 items.** Har row ke do hisse **alag columns** mein hain — kaunsa hissa P0 (D2/D3) mein chala gaya aur kaunsa P5 mein raha. Purani table sab kuch ek column mein mila deti thi, is liye woh **19.5** par ruk jati thi jabke P5 **15.5** hai.
 
-| # | Kaam | Din |
-|---|---|---|
-| 1 | Package install, `config/tenancy.php`, 4 overrides (O1–O4), `SlugPathTenantResolver` | 1.5 |
-| 3 | Path identification: route restructure, middleware order, `EnsureTenantMembership`, `onFail` | 2.0 |
-| 4 | Reserved slug list + coverage test + slug validation + create flow | 1.0 |
-| 5 | `tenantUrl()` (PHP + shared prop + JS) + codemod C1–C6 + CI gate | 2.0 |
-| 6 | Provisioning job + provisioner + `tenants:provision`/`destroy` + rollback | 2.0 |
-| 7 | `ModuleRegistry::migrationPaths()` + provider change + module layout | 1.0 |
-| 8 | Per-tenant: cache prefix, storage, mailer, scheduler, queue pinning | 1.5 |
-| 9 | Permissions: `Role`/`Permission` connection + `PermissionRegistrar` cache key | 0.5 |
-| 10 | Ops: backup script, export, suspend, DB privileges, deploy runbook | 1.5 |
-| 11 | Tests T1–T20 + `TenantTestCase` | 2.0 |
-| 12 | Documentation + `02`/`04`/`05` corrections | 1.0 |
-| 13–17 | Owner mapping, `failed_at_state` resume, sweeper, DB privileges, membership reconcile | 2.5 |
-| 18 | Tests T21–T38 | 1.0 |
-| | **Doc total (`07` §12.1)** | **21.5** |
+| # | Kaam | `07` §12.1 | P0 (D2/D3) | P5 |
+|---|---|---|---|---|
+| 1 | Package install, `config/tenancy.php`, 4 overrides (O1–O4), `SlugPathTenantResolver` | 1.5 | — | 1.5 |
+| **2** | **Step 0 cross-DB FK (5 migrations) + `central/`/`tenant/` folder split** | 2.5 | **2.5** (D2) | **0** |
+| 3 | Path identification: route restructure, middleware order, `EnsureTenantMembership`, `onFail` | 2.0 | — | 2.0 |
+| 4 | Reserved slug list + coverage test + slug validation + create flow | 1.0 | — | 1.0 |
+| 5 | `tenantUrl()` (PHP + shared prop + JS) + codemod C1–C6 + CI gate † | 2.0 | package | 2.0 |
+| 6 | Provisioning job + provisioner + `tenants:provision`/`destroy` + rollback | 2.0 | — | 2.0 |
+| 7 | `ModuleRegistry::migrationPaths()` + provider change + module layout † | 1.0 | package | 1.0 |
+| 8 | Per-tenant: cache prefix, storage, mailer, scheduler, queue pinning | 1.5 | — | 1.5 |
+| 9 | Permissions: `Role`/`Permission` connection + `PermissionRegistrar` cache key † | 0.5 | package | 0.5 |
+| 10 | Ops: backup script, export, suspend, DB privileges, deploy runbook | 1.5 | — | 1.5 |
+| 11 | Tests T1–T20 + `TenantTestCase` | 2.0 | — | 2.0 |
+| 12 | Documentation + `02`/`04`/`05` corrections | 1.0 | — | 1.0 |
+| 13–17 | Owner mapping, `failed_at_state` resume, sweeper, DB privileges, membership reconcile † | 2.5 | package | 2.5 |
+| 18 | Tests T21–T38 | 1.0 | — | 1.0 |
+| | **Rows ka sum (18 items)** | **22.0** | **2.5** | **19.5** |
+| | **Package work** — `07` §12.1 note: "#5, #7, #9, #17 ka helper" ke andar shamil | — | **3.5** (D3) | **−3.5** |
+| | **`07` rounding** — rows 22.0 vs stated `Total` 21.5 | — | — | **−0.5** |
+| | **Total** | **21.5** | **6.0** | **15.5** |
 
-**P5 ka hisaab:** `07` ka doc total **21.5** − #2 (2.5, P0 mein D2) − package work (3.5, P0 mein D3) = **15.5**.
+**† ka matlab:** package work ka hissa **isi row ke andar** hai (`07` §12.1: "~3.5 din ismein shamil hain (#5, #7, #9, #17 ka helper)"). `07` ne sirf **total 3.5** diya hai, yeh nahi ke kaunsa row kitna — **per-row split TBD** (§5.5). Is liye table mein 3.5 ek **alag negative row** hai, chaar rows ke andar chhupa hua nahi.
 
-> **Do numbers jo match nahi karte:** upar ki rows jama karne par **19.5** bante hain, magar `07` §12.1 ka total **21.5** likha hai (item-wise 22 bhi banta hai). Farq rounding ka hai — `07` ke rows 0.5 ke round numbers hain. **Hum doc ke `Total` ko authority mante hain, item-wise sum ko nahi**, aur usi se ledger chalate hain (§5). Is liye P5 = 15.5, na ke 19.5 − 6.0 = 13.5.
+**Teen numbers jo ab khud bolte hain:**
+
+1. **P0 ka hissa 6.0** = #2 (2.5, D2) + package (3.5, D3) — §4.1 ke 6.0 se exactly match.
+2. **P5 = 19.5 − 3.5 − 0.5 = 15.5** — doc ke `Total` se match, aur ab **rows jama karne se bhi** wohi aata hai.
+3. **`07` ka apna mismatch:** uske rows **22.0** bante hain, `Total` **21.5** likha hai — 0.5 ka farq. Hum doc ke `Total` ko authority mante hain (§0.2), is liye −0.5 ek **explicit row** hai, chhupa hua rounding nahi. Yeh `07` mein theek hona chahiye (§5.5).
+
+**#2 ke baare mein ek shart:** usmein Step 0 (cross-DB FK, `03` D1) **shamil** hai jo pehle hi ho chuka. Yani asli bacha hua kaam 2.5 se **kam** hai, magar `07` ne alag number nahi diya — is liye 2.5 hi rakha (§9 ka `NOT VERIFIED` item).
 
 **Done when:**
 
@@ -423,7 +689,7 @@ php artisan test                                    # T1–T25 (08) + module tes
 curl -sI https://mizaanbitserp.com/acme/dashboard | head -1   # → 200, real tenant
 ```
 
-**Critical path:** `make:module` v2 (`10` §6) → pehla module → manifest sync (`10` §4) → CP registration → SSO (`08` §2) → entitlement gate → UAT.
+**Critical path (P7 ke andar):** `make:module` v2 (`10` §6) → pehla module → manifest sync (`10` §4) → CP registration → SSO (`08` §2) → entitlement gate → UAT. **Poore platform ka critical path §3.1 mein hai** — yeh sirf P7 ka andaruni order hai.
 
 ---
 
@@ -487,11 +753,13 @@ curl -sI https://mizaanbitserp.com/acme/dashboard | head -1   # → 200, real te
 
 | # | Kaun | Kya replace hua | Delta |
 |---|---|---|---|
-| 1 | `04` S6 (5d) | `05` I1–I4 (12.5d) | **−5.0** |
+| 1 | `04` S6 (5d) | `05` I1–I4 (**14.5d**) | **−5.0** |
 | 2 | `04` S4 (6d) | `06` P1.2–P1.4 (13d) | **−6.0** |
 | 3 | `07` #2 (2.5d) | `03` D2 → P0 | **−2.5** |
 | 4 | `07` package (3.5d) | `03` D3 → P0 | **−3.5** |
 | | | **Total overlap** | **−17.0** |
+
+> **Row 1 mein `12.5d` (v1) galat tha — `05` I1–I4 = 14.5d** (`05` §8: I1 4 + I2 3 + I3 3 + I4 4.5). Delta phir bhi **−5.0** hai, kyunke delta `04` ke S6 ki 5d se aata hai (woh 5d hat gaye), `05` ke 14.5 se nahi. Is liye `11` §4.3 ka "12.5 din mein" bhi 14.5 kar diya gaya. **Kul total par is tabdeeli ka koi asar nahi** — 166.5 wahi hai.
 
 **Chhota double-count jo accept kiya:** `04` S0 mein "Passport install/config" hai aur `05` I0 mein bhi — ~0.5d. I0 uske badle core migration + `v1.5.0` tag bhi karta hai, is liye adjust nahi kiya. **Yeh jaan boojh kar hai, bhool nahi.**
 
@@ -525,7 +793,48 @@ curl -sI https://mizaanbitserp.com/acme/dashboard | head -1   # → 200, real te
 
 **Yeh 33 hafte kyun lagta hai jab `10` §11 ne "12.5 weeks" kaha:** `10` §11 sirf **pehla product** measure karta hai (52.5 din), **CP + identity + payments** nahi. CP akela 92.5 din hai (`40 + 27.5 + 25`). Yeh farq **scope** ka hai, estimate ki ghalti ka nahi.
 
-**Agar sirf MVP chahiye** (ek product, ek tenant, manual TRX, SSO): P0 6 + P2 ka S1–S3 (19) + P3 ka I0–I4 (16.5) + P4 ka P1.0–P1.4 (19.5) + P5 15.5 + P7 51.5 = **128 din ≈ 26 hafte solo**. Phir bhi 6 mahine — kyunke CP ke bina koi product nahi.
+**Agar sirf MVP chahiye** (ek product, ek tenant, manual TRX, SSO) — v1 ka hisaab adhoora tha, is liye poora dobara:
+
+| # | Hissa | Din | Source |
+|---|---|---|---|
+| 1 | P0 — baseline + D2 + D3 | 6.0 | §5.3 |
+| 2 | **P1** — `sso-client` skeleton (v1 mein **ghayab** tha) | **1.0** | `08` §5 #1 |
+| 3 | **`04` S0** — MySQL, Passport, manifest skeleton (v1 mein **ghayab** tha, magar S1–S3 iske baghair nahi chalte) | **2.0** | `04` §7 |
+| 4 | `04` S1–S3 — catalog, plans, tenants + subscriptions | 19.0 | `04` §7 (6+6+7) |
+| 5 | `05` I0–I4 — Passport, OIDC, login interrupt, resolve | 16.5 | `05` §8 (2+4+3+3+4.5) |
+| 6 | **`05` I8** — `GET /api/v1/users/tenants` (v1 mein **ghayab** tha; SSO callback ke baad picker iske baghair nahi chalta, `07` §6.6.3) | **1.0** | `05` §8 |
+| 7 | **`05` I6** — disable propagation (v1 mein **ghayab** tha; iske baghair `is_active=false` product tak nahi pahunchta) | **3.0** | `05` §8 |
+| 8 | `06` P1.0–P1.4 — manual TRX + verification + invoice | 19.5 | `06` §6.1 (4.5+2+4.5+5.5+3) |
+| 9 | P5 — path-based tenancy | 15.5 | §4.6 |
+| 10 | P7 — product wiring + pehla product | 51.5 | `08` §5 (12.5) + `10` §11 (39) |
+| | **MVP total** | **135.0** | |
+
+**v1 ka 128 se 135 kaise:** +1.0 (P1) +2.0 (S0) +1.0 (I8) +3.0 (I6) = **+7.0**. Chaaron **blocking** hain, "nice to have" nahi: S0 ke baghair S1–S3 nahi chalte, I8 ke baghair SSO callback ke baad picker dead-end hai, I6 ke baghair disable propagation ka poora design (`05` §5) MVP se bahar reh jata hai.
+
+**Calendar:** 135.0 ÷ 5 = **27 hafte solo**; 20 % buffer ke saath **32.4 hafte** (~7.5 mahine). Phir bhi 6+ mahine — kyunke CP ke bina koi product nahi, aur identity ke bina CP ka koi matlab nahi.
+
+### 5.5 Open estimates — jo docs mein nahi hain
+
+**Yeh section guess nahi karta.** Jo number kisi doc mein nahi hai, woh yahan **TBD** hai — aur uska asar likha hai taake aap faisla kar sakein ke estimate pehle chahiye ya baad mein.
+
+| # | Item | Kya missing | Doc | Asar agar galat ho | Default |
+|---|---|---|---|---|---|
+| **1** | **P6 deployment** | **Koi estimate hi nahi** — `09` mein ek bhi din ka number nahi | `09` (poora) | P6 **critical path par** hai (§3.1), is liye uski har slip seedha P7 ko lagti hai | **TBD** — P3/P4 ke beech chahiye, P6 ke waqt nahi |
+| **2** | **`07` §12.1 ka table mismatch** | Rows **22.0** bante hain, `Total` **21.5** likha hai (0.5) | `07` §12.1 | P5 15.5 ke bajaye 16.0 hota; ledger ka 166.5 0.5 badal jata | 21.5 (doc `Total`) — §4.6 mein −0.5 explicit row |
+| **3** | **`07` #2 ka 2.5d** | Step 0 cross-DB FK **shamil** hai jo `03` D1 mein ho chuka — bacha hua kaam kam, magar naya number nahi | `07` §12.1 #2, `03` D1 | P0 6.0 zyada dikh raha hai (over-estimate, khatra nahi) | 2.5 (doc number) |
+| **4** | **Package 3.5d ka per-row split** | `07` kehta hai "#5, #7, #9, #17 ke andar", magar kaunsa row kitna — nahi | `07` §12.1 note | P5/P0 ka split per-row galat ho sakta hai (total theek) | Total 3.5 — §4.6 mein alag negative row |
+| **5** | **2-dev ratio 0.56** | Teen alag ratios (0.55/0.55/0.60) ka **mean** — poore platform ka 2-dev number kisi doc mein nahi | `04` §7, `05` §8, `06` §6.1 | 93.2 din ka 2-dev claim ±10 % ho sakta hai | 0.56, **PLANNING ASSUMPTION** |
+| **6** | **P5 / P6 / P7 ka 2-dev number** | `07`, `09`, `08`, `10` mein 2-dev split nahi | — | §3.3 ki rows TBD hain, is liye 93.2 **upper bound** hai | TBD |
+| **7** | **Staging deploy** | `09` staging ko sirf "restore test" ke liye mention karta hai, estimate nahi | `09` §1.1, §8 | §3.2 ka 16.0 din 1.0 din se kam/zyada | **1.0d PLANNING ASSUMPTION** (§4.3.1) |
+| **8** | **P0 ka CP single-DB flag** | `03` D2 mein yeh case hai hi nahi (§4.1.1) | `03` D2.1, `07` §7.3 | CP boot hi nahi hoga — **blocking**, effort chhota | **TBD** — `03` D2 mein add karein |
+| **9** | **`06` §6.1 ka 21.5 vs 25** | Section ka heading "~21.5 din" kehta hai, rows **25.0** banti hain, aur doc khud "25 din (21.5 + buffer)" likhta hai | `06` §6.1 | P4 25 ya 21.5 — 3.5 ka farq | 25.0 (rows) |
+| **10** | **`06` §6.2 ka 17 vs 20** | Heading "~17 din", rows **20.0**, total line "20 din effort" | `06` §6.2 | P8 3 din over/under | 20.0 (rows) |
+| **11** | **`04` S4 vs `06` P1.2–P1.4** | S4 = 6d, `06` ka replacement = 13d. Agar payments descope ho jaye to CP ko S4 (6d) chahiye — us variant ka koi number nahi | `04` §7, `06` §6.1 | Payments hatane se 19 din nahi bachte, 12 bachte hain | TBD |
+| **12** | **P9 ka overlap analysis** | `07` §13.8 = 15d, magar `tenantUrl()` extension (#4) P5 #5 par depend karta hai — double count hua ya nahi, likha nahi | `07` §13.8 | P9 15 se kam ho sakta hai | 15.0 (doc) |
+| **13** | **P7b ke 39 din** | `10` §11 = "`04-DEVELOPMENT-GUIDE` §10 ka 50 − 11", magar item-wise breakdown `10` mein nahi — aur woh purana doc **partly superseded** hai (`README` §2.1) | `10` §11 | P7 ka sab se bara hissa (39 / 51.5) sab se kam verified hai | 39.0 (doc) |
+| **14** | **CI + secrets setup (P0)** | `09` §6/§11.4 mechanics deta hai, waqt nahi | `09` §11.4 | P0 6.0 se bahar | TBD |
+
+**Sab se ahem teen:** #1 (P6 — critical path par, zero estimate), #8 (CP single-DB flag — CP boot hi nahi hoga), #2 (`07` ka 0.5 mismatch — chhota magar ledger mein permanent).
 
 ---
 
@@ -553,6 +862,7 @@ curl -sI https://mizaanbitserp.com/acme/dashboard | head -1   # → 200, real te
 | **RK18** | Solo dev **bus factor 1** — 166 din ka kaam ek shakhs par | All | High | Docs hi mitigation hain; `02`–`11` isi liye tafseel se likhe | — |
 | **RK19** | Advisory backlog — `composer audit` 7 advisories (Passport install ke baad bhi 7) | P3 | Low–Medium | `symfony/*` patch bump — alag kaam | `05` §0.5 |
 | **RK20** | Payment proofs retention 1 saal vs `storage/app/private/attachments` backup | P4, P6 | Medium | `09` §12 backup script mein 365 din | `06` §5.4 |
+| **RK21** | **CP single DB mein tenant migrations kabhi nahi chaltin** — `class_exists(\Stancl\Tenancy\Tenancy::class)` guard CP mein false hai, is liye `audit_logs`, `settings`, `email_*`, `attachments`, `documents`, `permissions` nahi banti aur CP ka pehla page 500 deta hai | P0, P2 | **Critical** (CP boot hi nahi hota) | Config flag (§4.1.1 Option A) + `CentralSchemaParityTest`; `03` D2 mein add karein | `03` D2.1, `07` §7.3, `04` §7 scope note |
 
 ---
 
@@ -598,7 +908,7 @@ Order **dependency ke hisaab se** hai, priority ke nahi. #1–#4 aaj ho sakte ha
 | **4** | **Gateway onboarding paperwork shuru** — JazzCash + EasyPaisa merchant application | 6–8 hafte lead time — P8 se **pehle** shuru karna lazmi | `06` §3.9 ki documents list | 2 ghante |
 | **5** | **`composer.json`: `path` → `vcs`** + deploy key + `auth.json` | CI ka asli failure yahi hai; har aage ka phase isi par khara hai | `10` §1.2; verify: `ls -la vendor/khattakbits/` mein symlink **nahi** | 2 ghante |
 | **6** | **`php -m` mein `sodium`** — target server + CI extensions | Passport `ext-sodium` ke baghair install hi nahi hota | `05` §0.2.2, `09` §2 | 15 min |
-| **7** | **D2 branch** — 4 central / 11 tenant split + `MigrationSplitTest` | P0 ka pehla hissa; P5 iske baghair start nahi ho sakta | `03` D2 inventory; `10` §2.5 ka test | 2.5 din |
+| **7** | **D2 branch** — 4 central / 11 tenant split + `MigrationSplitTest` + **CP single-DB flag** (§4.1.1) | P0 ka pehla hissa; P5 iske baghair start nahi ho sakta — **aur flag ke baghair CP boot hi nahi hoga** | `03` D2 inventory; `10` §2.5 ka test; `03` D2 mein flag add karein | 2.5 din + **TBD** |
 | **8** | **D3 `core` v2.0.0** — routes split + `menu.php` `path` + `UPGRADE.md` | P0 ka doosra hissa; `menu.php` contract sab products ko todta hai | `03` D3.1/D3.2/D4 | 3.5 din |
 | **9** | **`04` §1.3 ke 18 tables ke migrations** (S1 se shuru) | CP ka pehla sprint; `05`/`06` dono in tables par depend hain | `04` §1.3 + `04` §7 S1 | 2 din |
 | **10** | **Pehla product ka faisla** — Mizaan ya LawBits | P7 ka scope isse tay hota hai; `08` Mizaan par likha hai | Faisla + `08` §1 ka seeder re-key (agar LawBits) | 1 ghanta |
@@ -608,6 +918,25 @@ Order **dependency ke hisaab se** hai, priority ke nahi. #1–#4 aaj ho sakte ha
 ---
 
 ## 9. Changelog
+
+### 14 Nov 2026 — v2 (structure + arithmetic)
+
+| # | Kya | Kyun |
+|---|---|---|
+| 1 | **§1.1 Completion %** — `01` ke 7 areas, aaj vs har phase, har row ka **basis** likha hua (days / tables / screens / TBD) | "Kitna ho gaya" ka koi jawaab roadmap mein nahi tha; aur `01` ke 24 % ko 166.5 din ke saath jodne ka tareeqa bhi nahi tha |
+| 2 | **§3.1 Critical path** — poore platform ka, sirf P7 ka nahi: P0 → P2 → P3 → P6 → P7 = **125.0 + P6**; P4 ka float sirf **2.5 din** | 166.5 **sum** hai, critical path nahi. P4 (payments) takriban critical hai, aur P6 beech mein baith kar sab rokta hai |
+| 3 | **§3.2 Pehla milestone — 4 hafte** — P0 + CI + P1 + S0 + S1 = **15.0d** (+1.0 staging) ≈ 4 hafte | Purana "SSO + provisioned + `read_only`" milestone **61.0d ≈ 3.5 mahine** ka tha — 4 hafte ka nahi. Ab dono ka hisaab saath hai |
+| 4 | **§3.3 Parallel plan** — per phase kya saath chalta hai, solo vs 2 devs, doc citation ke saath | `11` §3 ka "Parallel with" column phase-level tha, phase ke **andar** ka nahi. 2-dev 93.2 ka **upper bound** hona bhi ab likha hua hai |
+| 5 | **§3.4 Alternative ordering — vertical slice first** — pehla asli loop **67.0d** vs maujooda order **96.0 + P6** (~29 din farq) | Poora CP pehle banane ki wajah se pehla feedback 4+ mahine baad aata tha; ab trade-off table ke saath dono raaste likhe hain |
+| 6 | **§4.1.1 CP single-DB GAP** — tenant migrations CP mein **kabhi nahi** chaltin (`class_exists` guard), is liye CP boot hi nahi hoga | `03` D2 aur `07` §7.3 ne yeh case likha hi nahi; `07` §7.3 ka note ("single-tenant chalta rehta hai") **ghalat** hai. Teen options, ek recommended (config flag) |
+| 7 | **P0 done-when theek** — `→ 4` / `→ 11` / `→ 18` galat thay (migration files vs `create table` statements) | Aaj split se pehle hi `migrate --pretend` ka `create table` count **23** deta hai (8 central + 14 tenant + 1 module). Absolute count par test likhna hi galat tha |
+| 8 | **§4.6 P5 table dobara** — P0 ka hissa aur P5 ka hissa **alag columns**; package 3.5 aur `07` ka 0.5 **explicit rows** | Purani table 19.5 par ruk jati thi jabke P5 15.5 hai. Ab dono taraf se sum match karta hai (21.5 / 6.0 / 15.5) |
+| 9 | **§5.2 ledger row 1: 12.5 → 14.5** | `05` I1–I4 = 4+3+3+4.5 = **14.5**. Delta −5.0 wahi rehta hai (woh S6 se aata hai), total 166.5 par koi asar nahi |
+| 10 | **§5.4 MVP dobara** — +P1 (1.0), +S0 (2.0), +I8 (1.0), +I6 (3.0) → **135.0d ≈ 27 hafte** | Chaaron blocking thay: S0 ke baghair S1–S3 nahi, I8 ke baghair SSO callback dead-end, I6 ke baghair disable propagation MVP se bahar |
+| 11 | **§5.5 Open estimates** — 14 items, har ek ke saath asar aur default | Numbers jo docs mein nahi hain woh bikhre hue thay; P6 (critical path par, zero estimate) sab se bara |
+| 12 | **Staging gate (§4.3.1)** — S1 ke baad deploy, har phase ka done-when staging par bhi | `09` staging ko sirf restore test ke liye mention karta hai; "local green, server 500" wali class sirf staging pakadti hai |
+
+**v2 mein jo tabdeel nahi hua:** koi bhi **total** nahi badla — 166.5, 138.5, −17.0, 61.0, 93.2 sab wahi hain. Sirf **structure, splits aur ghalat commands** theek hue. Naye numbers sirf teen hain aur teenon **naye** hisse hain: 4-week milestone 15.0 (+1.0 assumption), vertical slice 67.0 vs 96.0, MVP 135.0.
 
 ### 14 Nov 2026 — v1 (initial)
 
@@ -623,11 +952,22 @@ Order **dependency ke hisaab se** hai, priority ke nahi. #1–#4 aaj ho sakte ha
 
 **Explicitly `NOT VERIFIED`:**
 
-- **`09` (deployment) ka effort** — `09` mein koi din ka number nahi hai, is liye `NOT ESTIMATED` likha. Guess nahi kiya.
-- **2-dev ratio 0.56** — `04`/`05`/`06` ke teen alag ratios (0.55, 0.55, 0.60) ka mean hai, kisi doc ne poore platform ka 2-dev number nahi diya.
+- **`09` (deployment) ka effort** — `09` mein koi din ka number nahi hai, is liye `NOT ESTIMATED` likha. Guess nahi kiya. P6 critical path par hai (§3.1), is liye yeh sab se mehnga khula item hai.
+- **2-dev ratio 0.56** — `04`/`05`/`06` ke teen alag ratios (0.55, 0.55, 0.60) ka mean hai, kisi doc ne poore platform ka 2-dev number nahi diya. §3.3 ka 93.2 is liye **upper bound** hai.
 - **`07` §12.1 #2 ka 2.5d** — usmein Step 0 (cross-DB FK) shamil hai jo `03` D1 mein **ho chuka**. Asli bacha hua kaam is se kam hai, magar doc ne alag number nahi diya — is liye 2.5 hi rakha.
-- **MySQL grants probe** — `NOT VERIFIED` (`09` §0.5), P6 ka blocking item.
+- **MySQL grants probe** — `NOT VERIFIED` (`09` §0.5), P6 ka blocking item. Staging par test hota hai (§4.3.1).
+- **CP single-DB flag ka effort** — `03` D2 mein case hi nahi hai, is liye **TBD** (§4.1.1). Mechanism recommend kiya hai, number nahi.
+- **§1.1 ka completion %** — `01` ke "aaj" ke ilawa baaki columns **PLANNING ASSUMPTION** hain. Basis har row mein likha hai; jahan denominator nahi tha (Starter Kit, Deployment) wahan **TBD** hai.
+- **§3.2 ka staging 1.0d** — **PLANNING ASSUMPTION**, `09` mein staging ka koi estimate nahi.
+- **Split ke baad ka `create table` count** — 23 **aaj** ka verified number hai (14 Nov 2026). Split ke baad CP par wohi 23 rehna chahiye (same migrations, sirf folder badla) — yeh **verify karna hai**, kyunke module add hone par badlega.
+
+**Verification log (14 Nov 2026):**
+
+```bash
+php artisan migrate --pretend | grep -c "create table"   # → 23
+# tables: 8 central + 14 tenant + 1 module (demo_entries), 15 migration files se
+```
 
 ---
 
-*Yeh roadmap design + schedule hai, code nahi. Har phase ka "done when" command ya test hai — "kaam ho gaya lagta hai" is document mein valid nahi. Effort numbers `02`–`10` se hain, aur jahan overlap tha wahan §5.2 mein khula hua hai.*
+*Yeh roadmap design + schedule hai, code nahi. Har phase ka "done when" command ya test hai — "kaam ho gaya lagta hai" is document mein valid nahi. Effort numbers `02`–`10` se hain, jahan overlap tha wahan §5.2 mein khula hua hai, aur jahan number hi nahi tha wahan §5.5 mein **TBD** likha hai — guess kahin nahi kiya.*
