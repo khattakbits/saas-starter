@@ -479,38 +479,37 @@ foreach ($this->app->make(ModuleRegistry::class)->all() as $module) {
 ```
 
 ```php
-// Naya — do context, do commands
+// Naya — flag ke hisaab se do mode (D2.3)
 $registry = $this->app->make(ModuleRegistry::class);
+$tenancy = (bool) config('khattakbits.tenancy.enabled', false);
 
-// 1) CENTRAL — `php artisan migrate` inhi ko chalata hai
-$this->loadMigrationsFrom($this->packagePath('database/migrations/central'));
+$folders = MigrationPaths::folders($this->packagePath('database/migrations'), $registry);
 
-foreach ($registry->migrationPaths('central') as $path) {
+// 1) `php artisan migrate` — tenancy off par DONO folders (CP/ek DB), on par sirf central
+foreach (MigrationPaths::forMigrate($folders, $tenancy) as $path) {
     $this->loadMigrationsFrom($path);
 }
 
 // 2) TENANT — `loadMigrationsFrom` se register NAHI karenge, warna
 //    `php artisan migrate` unhein bhi central DB par chala dega.
-if (class_exists(\Stancl\Tenancy\Tenancy::class)) {
-    $params = config('tenancy.migration_parameters');
+if ($tenancy) {
+    $params = config('tenancy.migration_parameters', []);
 
-    $params['--path'] = array_values(array_filter(
-        array_merge(
-            [$this->packagePath('database/migrations/tenant')],
-            array_values($registry->migrationPaths('tenant')),
-        ),
-        'is_dir',
-    ));
+    $params['--path'] = array_values(array_unique(array_merge(
+        $folders['tenant'],
+        $params['--path'] ?? [],
+    )));
 
     config(['tenancy.migration_parameters' => $params]);
 }
 ```
 
-**Teen traps jo Part B ke risks mein nahi thay:**
+**Chaar traps jo Part B ke risks mein nahi thay:**
 
 1. **`config(['tenancy.migration_parameters.--path' => ...])` kaam nahi karta.** `Arr::set()` dot ko nesting samajhta hai — `'--path'` do level ban jata hai. **Poora array** replace karna hoga, jaisa upar hai.
-2. **`class_exists` guard lazmi.** `khattakbits/core` ko pata nahi hona chahiye ke product multi-tenant hai ya nahi — warna starter kit (single-tenant) tenancy package par depend karne lagega.
+2. **`class_exists(\Stancl\Tenancy\Tenancy::class)` guard galat tha — config flag use karein.** Guard product ke liye theek lagta hai, magar **CP** mein tenancy install hi nahi, is liye guard false hota hai aur tenant migrations **kabhi** register nahi hotin — CP ka schema adhoora reh jata hai (tafseel **D2.3**).
 3. **`--path` array hai, string nahi.** `MigrateCommand` `--path` milne par **sirf** wohi paths use karta hai (`BaseCommand::getMigrationPaths()`), `migrator->paths()` ignore karta hai. Is liye core + saare modules ki tenant migrations **usi ek array** mein aani chahiye.
+4. **Laravel subfolders khud nahi uthata.** `database/migrations/*.php` glob hota hai, `database/migrations/central/*.php` **nahi**. Move ke baad host ki dono folders explicitly register karni hongi (D2.3) — warna `php artisan migrate` ko kuch bhi nahi milta aur app bina `cache`/`jobs`/`permissions` tables ke chalti hai.
 
 ### D2.2 Filename immutability — sab se aasan galti
 
@@ -527,6 +526,76 @@ tenant par, provisioning ke beech mein.
 phir `SELECT table_name FROM information_schema.tables WHERE table_schema = ...` se verify karein ke tenant DB
 mein **`users` nahi hai** aur `attachments` **hai**. Yeh test D2 ke baad permanent rehna chahiye, kyunke split
 ki galti sirf runtime par dikhti hai.
+
+> **P0 mein yeh test nahi likha ja sakta** — us waqt tenancy install hi nahi hoti, is liye `tenants:migrate`
+> maujood nahi. P0 ka test **file-level** hota hai (folder counts + FK scan); do-tenant wala test P5 mein aata
+> hai. Dono ka rishta D2.3 mein hai.
+
+### D2.3 CP / single-tenant mode — `khattakbits.tenancy.enabled`
+
+**Masla jo D2/D2.1 mein chhoot gaya tha (RK21).** Host app **khud control plane hai** aur uske paas tenancy
+**nahi** (`04` §7 scope note: "`stancl/tenancy` **is CP mein nahi** — CP single DB hai"). D2.1 ka purana
+`class_exists(\Stancl\Tenancy\Tenancy::class)` guard CP mein **false** hai — yani tenant migrations **kabhi**
+register nahi hotin, `php artisan migrate` sirf `central/` chalata hai, aur CP ke paas `audit_logs`, `settings`,
+`email_accounts`, `email_logs`, `email_templates`, `attachments`, `deleted_documents`, `document_views`,
+`document_sequences`, `permissions`/`roles` — **kuch nahi** hota. Pehla page render `Table 'audit_logs' doesn't
+exist` par 500 deta hai.
+
+`07` §7.3 ka note 2 ("tenancy na ho to starter kit single-tenant chalta rehta hai") is maamle mein **ghalat**
+hai: single-tenant app ko un tables ki zaroorat **hoti hai** — woh "ek tenant" hai, "zero tables" nahi.
+
+**Fix — package ki maujoodgi ke bajaye explicit config:**
+
+| Key | Env | Default | Matlab |
+|---|---|---|---|
+| `khattakbits.tenancy.enabled` | `KB_TENANCY_ENABLED` | `false` | `false` = **ek DB** (CP, starter kit, tests); `true` = **multi-DB product** |
+
+| `enabled` | `php artisan migrate` | `tenants:migrate` |
+|---|---|---|
+| `false` (default) | central **+** tenant dono → poora schema ek DB mein, **23 tables** | command maujood nahi (tenancy install nahi) |
+| `true` | sirf central → **8 tables** | tenant folders `--path` se → **14 tenant + 1 module** |
+
+**Kahan register hota hai — do jagah, dono lazmi:**
+
+| Kaun | Kya register karta hai | Kahan |
+|---|---|---|
+| **Package** | core `central/` + `tenant/` + module paths (`ModuleRegistry::migrationPaths()` dono context ke liye) | `CoreServiceProvider::boot()` |
+| **Host** | apni `database/migrations/{central,tenant}` | `AppServiceProvider::boot()` |
+
+**Trap #4 tafseel se:** Laravel ka default `migrate` `database_path('migrations')` ke **sirf top-level
+`*.php`** files uthata hai — `central/` aur `tenant/` subfolders ko **nahi**. Yani move ke baad host ki 3
+migrations (cache, jobs, permissions) **khamoshi se gayab** ho jati hain: `cache`/`jobs` ke baghair queue aur
+session tootte hain, `permissions` ke baghair poora RBAC. Is liye `loadMigrationsFrom()` host provider mein bhi
+lazmi hai, sirf package provider kaafi nahi.
+
+**Corrected done-when** — `11` §4.1 ka `migrate --pretend | grep -c "create table"` **do waja se galat tha**:
+woh statements ginta hai (migration files nahi), aur CP par `4` hona **bug** hai, acceptance nahi.
+
+```bash
+# 1. Files — folder ke hisaab se (P0 ka test isi ko lock karta hai)
+ls vendor/khattakbits/core/database/migrations/central/*.php | wc -l   # → 2
+ls vendor/khattakbits/core/database/migrations/tenant/*.php  | wc -l   # → 10
+ls database/migrations/central/*.php | wc -l                           # → 2
+ls database/migrations/tenant/*.php  | wc -l                           # → 1
+ls app/Modules/*/Database/Migrations/tenant/*.php | wc -l              # → 1 (demo_entries)
+
+# 2. Tables — asli schema, temporary SQLite par (pretend nahi)
+DB_CONNECTION=sqlite DB_DATABASE=/tmp/kb-schema.sqlite php artisan migrate:fresh --force
+# → 23 tables: 8 central + 14 tenant + 1 module
+```
+
+**Tests jo P0 mein likhe jayenge:**
+
+| Test | Kya prove karta hai | Kab |
+|---|---|---|
+| `MigrationSplitTest` | Folder counts exactly (2/10 core, 2/1 host, 0/1 module), filenames unchanged, tenant folders mein `users` ka koi FK nahi | P0 |
+| `CentralSchemaParityTest` | `KB_TENANCY_ENABLED=false` par `migrate:fresh` → saari **23** tables maujood (D1 guard ke saath) | P0 |
+| `MigrationPathsTest` | Path-resolution dono flag values par sahi folders deta hai | P0 |
+| `MigrationSplitTest` (tenant version) | Do tenants provision, tenant DB mein `users` nahi / `attachments` hai | **P5** |
+
+**Effort ka asar:** yeh flag `07` §12.1 #2 ke 2.5d mein **shamil nahi** tha (wahan sirf split + Step 0 hai) —
+`11` §4.1 mein `3b` row ke saath **TBD** likha hai. Asli kaam: ek config key, `MigrationPaths` helper, host
+provider ki 6 lines, aur 3 tests.
 
 ## D3 · `khattakbits/core` v2.0.0 — do breaking changes
 

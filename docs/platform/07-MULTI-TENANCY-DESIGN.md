@@ -1672,27 +1672,25 @@ foreach ($this->app->make(ModuleRegistry::class)->all() as $module) {
 
 ```php
 $registry = $this->app->make(ModuleRegistry::class);
+$tenancy = (bool) config('khattakbits.tenancy.enabled', false);
 
-// 1) CENTRAL — `php artisan migrate` inhi ko chalata hai
-$this->loadMigrationsFrom($this->packagePath('database/migrations/central'));
+$folders = MigrationPaths::folders($this->packagePath('database/migrations'), $registry);
 
-foreach ($registry->migrationPaths('central') as $path) {
+// 1) `php artisan migrate` — tenancy off par dono folders (CP/ek DB), on par sirf central
+foreach (MigrationPaths::forMigrate($folders, $tenancy) as $path) {
     $this->loadMigrationsFrom($path);
 }
 
 // 2) TENANT — `loadMigrationsFrom` se register NAHI karenge, warna
 //    `php artisan migrate` unhein bhi central DB par chala dega.
 //    Inhein `tenants:migrate` ke --path mein daalte hain.
-if (class_exists(\Stancl\Tenancy\Tenancy::class)) {
-    $params = config('tenancy.migration_parameters');
+if ($tenancy) {
+    $params = config('tenancy.migration_parameters', []);
 
-    $params['--path'] = array_values(array_filter(
-        array_merge(
-            [$this->packagePath('database/migrations/tenant')],
-            array_values($registry->migrationPaths('tenant')),
-        ),
-        'is_dir',
-    ));
+    $params['--path'] = array_values(array_unique(array_merge(
+        $folders['tenant'],
+        $params['--path'] ?? [],
+    )));
 
     config(['tenancy.migration_parameters' => $params]);
 }
@@ -1701,8 +1699,10 @@ if (class_exists(\Stancl\Tenancy\Tenancy::class)) {
 **Teen bareek baatein:**
 
 1. **`config(['tenancy.migration_parameters.--path' => ...])` nahi chalega.** `--path` mein dot hai, aur `Arr::set()` dot ko nesting samajhta hai — `'--path'` do level ban jata hai. Poora array replace karna hoga, jaisa upar hai.
-2. **`class_exists` guard lazmi.** `khattakbits/core` ko pata nahi hona chahiye ke product multi-tenant hai ya nahi. Tenancy na ho to yeh block skip ho jata hai aur starter kit single-tenant chalta rehta hai.
+2. **`class_exists` guard ki jagah config flag — `khattakbits.tenancy.enabled` (`KB_TENANCY_ENABLED`, default `false`).** Guard product ke liye theek tha, magar **CP** mein `stancl/tenancy` install hi nahi (`04` §7 scope note) — wahan guard false hota hai aur tenant migrations **kabhi** register nahi hotin, yani CP ka schema adhoora (`audit_logs`, `settings`, `email_*`, `attachments`, `permissions` gayab) aur pehla page 500. Flag `false` par `php artisan migrate` **dono** folders chalata hai; `true` par sirf central, aur tenant paths `--path` se `tenants:migrate` ko milte hain. Tafseel `03` D2.3.
 3. **`--path` array hai, string nahi.** `config/tenancy.php` ka default `['--path' => [database_path('migrations/tenant')]]` hai aur `--path` option `VALUE_IS_ARRAY` hai. `MigrateCommand` `--path` milne par **sirf** wohi paths use karta hai (`BaseCommand::getMigrationPaths()`), `migrator->paths()` ignore karta hai — is liye core + saare modules ki tenant migrations isi array mein aani chahiye.
+
+> **`khattakbits/core` ka `tenancy.enabled` par depend karna mana nahi hai** — woh `stancl/tenancy` par depend nahi karta, sirf ek boolean config key padhta hai. Package ka `composer.json` wahi rehta hai (koi `stancl/tenancy` require nahi), aur `true` par bhi core package ki koi class tenancy ki class ko touch nahi karti.
 
 ### 7.4 `tenants:migrate` ka verified behaviour
 
