@@ -930,6 +930,16 @@ Order **dependency ke hisaab se** hai, priority ke nahi. #1–#4 aaj ho sakte ha
 
 ## 9. Changelog
 
+### 16 Nov 2026 — v4 (D2 implemented: split live, D1 ke 2 FK band)
+
+| # | Kya | Kyun |
+|---|---|---|
+| 1 | **D2 code mukammal** — core mein 12 migrations (`2 central / 10 tenant`), host mein 3 (`2/1`), module ki 1 → `Database/Migrations/tenant/`; `MigrationPaths` helper + `ModuleRegistry::migrationPaths()` + dono providers mein registration | Spec (`03` D2.3) ke mutabiq; `KB_TENANCY_ENABLED=false` par `migrate:fresh` = **23 tables** (asli SQLite par verify) |
+| 2 | **D1 ke do cross-DB FK pakde gaye** — `email_templates.updated_by` aur `DocumentColumns::add()` ka `created_by` dono `users` par `constrained()` thay | D1 ki list 5 tables ki thi; `email_templates` aur doctype tables us waqt maujood nahi thay. Multi-DB tenancy mein `tenants:migrate` MySQL par fail hota. Detail `03` D2.3.1 |
+| 3 | **`DocumentColumns` shared helper** — ek fix se har future doctype theek; `MigrationSplitTest` ab discovery-based FK scan karta hai (fixed list nahi) | Warna naya doctype phir wohi bug le aata aur test use pakadta hi nahi |
+| 4 | **P0 done-when asli numbers ke saath** — 4 central / 11 tenant (+1 module = 12) files, 23 tables (8 central + 14 tenant + 1 module) | v3 ne mechanism diya tha, numbers verify nahi hue thay. Ab test inhi numbers ko lock karta hai |
+| 5 | **Tests: 117 → 138** (588 → 689 assertions) | `MigrationPathsTest` (7), `MigrationSplitTest` (11), `CentralSchemaParityTest` (3) |
+
 ### 14 Nov 2026 — v3 (D2 spec: RK21 band, done-when theek)
 
 | # | Kya | Kyun |

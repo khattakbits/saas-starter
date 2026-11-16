@@ -422,8 +422,8 @@ contract tor rahe hain.
 
 | # | Kaam | Status | Kyun ab |
 |---|---|---|---|
-| **D1** | **Step 0 — cross-DB FK fix** (5 migrations) | ✅ **Done** — branch `feat/cross-db-fk`, extraction se pehle | `02` §5.5. Path-based tenancy se iska koi taalluq nahi, magar yeh **pehle** hona chahiye tha taake tenant DB par cross-DB FK na rahe. Verify: `grep -rn "constrained('users')\|references('users')" database/migrations vendor/khattakbits/core/database/migrations` — tenant tables mein zero hit |
-| **D2** | **Migration folder split** — `{central,tenant}` | ⬜ **Pending** — next MAJOR se pehle | Aaj `loadMigrationsFrom()` **saari** migrations dono jagah chalata hai: `php artisan migrate` central par, `php artisan tenants:migrate` har tenant par. `users` central table hai magar har tenant DB mein bhi ban jati hai; `attachments` tenant table hai magar central mein bhi. `07` §7.1 ka split isay theek karta hai |
+| **D1** | **Step 0 — cross-DB FK fix** (5 migrations) | ✅ **Done** — branch `feat/cross-db-fk`, extraction se pehle. **Do jagah D2 mein pakdi gayin** (`email_templates.updated_by`, `DocumentColumns::add()`) — neeche D2.3.1 | `02` §5.5. Path-based tenancy se iska koi taalluq nahi, magar yeh **pehle** hona chahiye tha taake tenant DB par cross-DB FK na rahe. Verify ab code se hota hai, grep se nahi: `MigrationSplitTest::test_no_tenant_table_has_a_foreign_key_to_users` (discovery-based, fixed list nahi) |
+| **D2** | **Migration folder split** — `{central,tenant}` | ✅ **Done** — branch `feat/d2-migration-split`; 4 central / 11 tenant (+1 module) files, 23 tables | Aaj `loadMigrationsFrom()` **saari** migrations dono jagah chalata hai: `php artisan migrate` central par, `php artisan tenants:migrate` har tenant par. `users` central table hai magar har tenant DB mein bhi ban jati hai; `attachments` tenant table hai magar central mein bhi. `07` §7.1 ka split isay theek karta hai |
 | **D3** | **`khattakbits/core` v2.0.0 (MAJOR)** | ⬜ **Pending** | Do breaking changes: (a) core routes ka split (`07` §3.4 — `attachments` + `document-activity` tenant ke andar `{tenant}` ke saath), (b) `menu.php` contract mein `path` key (`07` §5.3) |
 | **D4** | **`UPGRADE.md`** | ⬜ **Pending** | D3 ke dono breaking changes ke liye codemod instructions. Bina iske har product ka upgrade manual hai |
 
@@ -595,7 +595,32 @@ DB_CONNECTION=sqlite DB_DATABASE=/tmp/kb-schema.sqlite php artisan migrate:fresh
 
 **Effort ka asar:** yeh flag `07` §12.1 #2 ke 2.5d mein **shamil nahi** tha (wahan sirf split + Step 0 hai) —
 `11` §4.1 mein `3b` row ke saath **TBD** likha hai. Asli kaam: ek config key, `MigrationPaths` helper, host
-provider ki 6 lines, aur 3 tests.
+provider ki 6 lines, do FK fixes (neeche), aur 3 tests.
+
+#### D2.3.1 · Implementation ke baad: D1 ke do chhoote hue FK
+
+Split ne do **cross-DB FK** pakde jo D1 ke waqt maujood nahi thay (ya D1 ki list mein nahi thay). Dono tenant
+tables par `users` ka FK tha — multi-DB tenancy mein `users` central DB mein hoti hai, is liye `tenants:migrate`
+MySQL par **fail** hota (`errno 150`).
+
+| Table / helper | Pehle | Ab | Kyun chhoot gaya |
+|---|---|---|---|
+| `email_templates.updated_by` | `foreignId()->constrained('users')->nullOnDelete()` | `unsignedBigInteger()->nullable()->index()` | D1 ki `REFERENCING_TABLES` list mein sirf 5 tables thi; `email_templates` us waqt `settings`/`audit` ke saath aayi hi nahi thi |
+| `DocumentColumns::add()` → `created_by` (har doctype) | `foreignId()->constrained('users')->nullOnDelete()` | `unsignedBigInteger()->nullable()->index()` | D1 ke waqt core mein **koi doctype table nahi thi** — pehla doctype (`demo_entries`) module mein tha, aur D1 ne module tables scan nahi kiye |
+
+`DocumentColumns` wala fix ahem hai: woh **shared helper** hai, is liye har naya doctype khud-ba-khud cross-DB
+FK le raha tha. Ek fix se saari future doctypes theek ho gayin.
+
+**Regression guard:** `MigrationSplitTest` ab tenant folders ke **saari** `Schema::create()` calls se table
+names nikalta hai (permission tables config se) aur har table par `Schema::getForeignKeys()` check karta hai.
+Yani naya doctype bhi is guard se guzrega — fixed list nahi, discovery.
+
+**Null-on-delete ka gap (NOT DONE):** `KhattakBits\Core\Models\User::deleted` hook sirf 5 columns null karta
+hai (`uploaded_by`, `user_id` ×2, `deleted_by`, `updated_by`). `created_by` (doctypes) aur
+`email_templates.updated_by` is list mein nahi hain, is liye user delete hone par woh columns dangling reh
+jate hain. Pehle DB ka `nullOnDelete` yeh kaam karta tha. Fix ka faisla module-level registration ka hai
+(core mein module table ke naam hard-code karna galat hoga) — `11` ke "Open estimates" mein nahi, backlog
+mein. Abhi ke liye columns nullable hain, is liye UI crash nahi karta.
 
 ## D3 · `khattakbits/core` v2.0.0 — do breaking changes
 
