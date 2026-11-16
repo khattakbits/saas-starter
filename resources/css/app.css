@@ -3,6 +3,9 @@
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 @source '../js';
+/* Package npm se aata hai (git tag v1.0.0) — clean runner par sirf yeh path hota hai. */
+@source '../../node_modules/@khattakbits/ui/src';
+/* Local dev: sibling folder se live classes (CI mein maujood nahi — Tailwind ignore karta hai). */
 @source '../../khattakbits-ui/src';
 
 :root {

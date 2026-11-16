@@ -18,7 +18,7 @@
     "require": {
         "php": "^8.3",
         "inertiajs/inertia-laravel": "^3.5",
-        "khattakbits/core": "dev-main",
+        "khattakbits/core": "^2.0",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
         "spatie/laravel-permission": "^8.3"

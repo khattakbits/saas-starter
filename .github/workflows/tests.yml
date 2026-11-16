@@ -35,17 +35,38 @@ jobs:
           php -m | grep -qx sodium
           php -r 'var_dump(function_exists("sodium_crypto_sign_verify_detached"));'
 
-      # Private packages are `type: vcs` in composer.json (09 §6.1). The token is a
-      # fine-grained PAT with `contents:read` on the khattakbits repos (09 §11.4).
-      - name: Configure Composer auth
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # Do private repos, ek hi token:
+      #   - composer: `khattakbits/core` type=vcs (09 §6.1)
+      #   - npm: `@khattakbits/ui` git+https dependency (package.json)
+      # Token fine-grained PAT hai, `contents:read` dono repos par (09 §11.4).
+      # Secret ka naam KB_GITHUB_TOKEN hai; purana COMPOSER_GITHUB_TOKEN bhi chalta hai.
+      - name: Configure private repo auth (composer + npm git)
         env:
-          COMPOSER_GITHUB_TOKEN: ${{ secrets.COMPOSER_GITHUB_TOKEN }}
+          KB_TOKEN: ${{ secrets.KB_GITHUB_TOKEN || secrets.COMPOSER_GITHUB_TOKEN }}
         run: |
-          if [ -z "$COMPOSER_GITHUB_TOKEN" ]; then
-            echo "::error::COMPOSER_GITHUB_TOKEN secret is not set — private khattakbits packages cannot be resolved"
+          if [ -z "$KB_TOKEN" ]; then
+            echo "::error::KB_GITHUB_TOKEN (ya purana COMPOSER_GITHUB_TOKEN) set nahi hai — khattakbits/core aur @khattakbits/ui resolve nahi ho sakte"
             exit 1
           fi
-          composer config --global --auth github-oauth.github.com "$COMPOSER_GITHUB_TOKEN"
+
+          composer config --global --auth github-oauth.github.com "$KB_TOKEN"
+
+          # npm lockfile mein GitHub dep `git+ssh://git@github.com/...` ke tor par
+          # likhta hai magar fetch https se karta hai — dono forms rewrite karo,
+          # warna runner par SSH key maangi jayegi. Token sirf ~/.gitconfig mein
+          # jata hai, package.json ya lockfile mein kabhi nahi.
+          git config --global url."https://x-access-token:${KB_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://x-access-token:${KB_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+
+          # Rewrite actually kaam kar raha hai? (token CI logs mein masked hota hai)
+          git ls-remote --heads https://github.com/khattakbits/core.git | head -1
+          git ls-remote --heads https://github.com/khattakbits/ui.git | head -1
 
       - name: Cache Composer packages
         uses: actions/cache@v4
@@ -53,12 +74,6 @@ jobs:
           path: ~/.composer/cache/files
           key: composer-${{ matrix.php }}-${{ hashFiles('composer.lock') }}
           restore-keys: composer-${{ matrix.php }}-
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
 
       - name: Install PHP dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
@@ -79,6 +94,19 @@ jobs:
 
       - name: Install JS dependencies
         run: npm ci
+
+      # Same guard JS side: `file:` dependency ka matlab hai clean runner par build tootega.
+      - name: Assert @khattakbits/ui came from git, not a local path
+        run: |
+          if [ -L node_modules/@khattakbits/ui ]; then
+            echo "::error::node_modules/@khattakbits/ui is a symlink — a file: dependency is committed"
+            exit 1
+          fi
+          if grep -q '"resolved": "file:' package-lock.json; then
+            echo "::error::package-lock.json still resolves a local path"
+            exit 1
+          fi
+          node -e "const p=require('./node_modules/@khattakbits/ui/package.json'); console.log('@khattakbits/ui', p.version, 'from git')"
 
       - name: Build frontend
         run: npm run build

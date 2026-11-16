@@ -20,7 +20,7 @@
         "@fontsource-variable/inter": "^5.3.0",
         "@inertiajs/vite": "^3.9.1",
         "@inertiajs/vue3": "^3.9.1",
-        "@khattakbits/ui": "file:../khattakbits-ui",
+        "@khattakbits/ui": "git+https://github.com/khattakbits/ui.git#v1.0.0",
         "@tanstack/vue-query": "^5.105.0",
         "@tanstack/vue-virtual": "^3.13.48",
         "@vitejs/plugin-vue": "^6.0.10",

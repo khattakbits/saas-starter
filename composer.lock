@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "916844a35b9667da33c69177f4b435ed",
+    "content-hash": "23dd6710180da5baa2f873f02bb7676b",
     "packages": [
         {
             "name": "brick/math",
@@ -1133,11 +1133,17 @@
         },
         {
             "name": "khattakbits/core",
-            "version": "dev-main",
+            "version": "v2.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/khattakbits/core.git",
+                "reference": "d9d8656c9a716370cd80782aebc8842f0e47c3c5"
+            },
             "dist": {
-                "type": "path",
-                "url": "../khattakbits-core",
-                "reference": "95f7cb68e4070e7e2c20e61216a31c5492fe3838"
+                "type": "zip",
+                "url": "https://api.github.com/repos/khattakbits/core/zipball/d9d8656c9a716370cd80782aebc8842f0e47c3c5",
+                "reference": "d9d8656c9a716370cd80782aebc8842f0e47c3c5",
+                "shasum": ""
             },
             "require": {
                 "illuminate/auth": "^13.0",
@@ -1183,10 +1189,11 @@
                 "proprietary"
             ],
             "description": "KhattakBits shared kernel: audit, mailer, documents, RBAC, settings, modules",
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "support": {
+                "source": "https://github.com/khattakbits/core/tree/v2.0.0",
+                "issues": "https://github.com/khattakbits/core/issues"
+            },
+            "time": "2026-11-16T05:14:22+00:00"
         },
         {
             "name": "laravel/framework",
@@ -9091,9 +9098,7 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {
-        "khattakbits/core": 20
-    },
+    "stability-flags": {},
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
