@@ -332,6 +332,15 @@ curl -sI https://staging.khattakbits.com/up | head -1  # 200
 
 ### 4.1 P0 — Baseline, D2 split, `core` v2.0.0 — 6.0 din
 
+**Status: ✅ done (16 Nov 2026).**
+
+| Item | Kahan |
+|---|---|
+| Tags | `pre-extraction`, `pre-tenancy`; `khattakbits/core` **v2.0.0** (annotated, pushed); `khattakbits/ui` **v1.0.0** (annotated, pushed) |
+| D2 split | `feat/d2-migration-split` → core `724ce83`, host `b02f576` |
+| D3 core v2.0.0 | `feat/d3-core-v2` → core `d9d8656`, host `8a6c1cf` + docs `9f4d8f7` |
+| CI green | dependency graph kisi sibling par depend nahi karta: core `^2.0` (vcs, lock v2.0.0), ui `git+…#v1.0.0` — clean clone par `composer install` + `npm ci` + build + 154 tests |
+
 **Kyun sab se pehle:** teenon cheezein **package ka public contract** torti hain. Inhein baad mein karna = har product ko dobara migrate karna. `03` Part D ka apna rule: "package release se **pehle**, kyunke woh package ka public contract tor rahe hain."
 
 | # | Deliverable | Source |
@@ -386,6 +395,15 @@ php artisan test --filter=MenuBuilderTest
 # 8. Tags maujood
 git tag -l 'pre-*'   # → pre-extraction, pre-tenancy
 git tag -l 'v2.0.0'  # → khattakbits/core v2.0.0 (annotated)
+
+# 9. CI parity — clean clone, koi sibling folder nahi (yahi GitHub runner karta hai)
+git clone --branch feat/d3-core-v2 <repo> /tmp/proof && cd /tmp/proof
+composer install --no-interaction --prefer-dist --no-progress
+composer check-platform-reqs
+npm ci && npm run build
+cp .env.example .env && php artisan key:generate
+php artisan test && ./vendor/bin/pint --test
+# → core v2.0.0 (git source, koi symlink nahi), ui git se, 154 tests
 ```
 
 > **`migrate --pretend | grep -c "create table"` (v2) bhi galat tha** — woh statements ginta hai, aur `--pretend` ka output DB ke already-migrated state par depend karta hai (fresh DB par 23, migrated DB par 0). Sahi tareeqa: **files** folder ke hisaab se ginne, aur **tables** ek temporary SQLite `migrate:fresh` se. Wajah aur poora mechanism §4.1.1 / `03` D2.3 mein.
@@ -939,6 +957,22 @@ Order **dependency ke hisaab se** hai, priority ke nahi. #1–#4 aaj ho sakte ha
 ---
 
 ## 9. Changelog
+
+### 16 Nov 2026 — v6 (P0 band: CI genuinely green)
+
+| # | Kya | Kyun |
+|---|---|---|
+| 1 | **`khattakbits/core` main = `d9d8656`, tag `v2.0.0` remote par** | Tag push hue baghair `composer install` `^2.0` resolve nahi kar sakta. Verify: `ls-remote` → `refs/tags/v2.0.0` (annotated object) |
+| 2 | **`khattakbits/ui` tag `v1.0.0`** (annotated, `6ed803d` par; `package.json` version `0.1.0` hai — mismatch neeche) | Host ab ui ko git tag se pin karta hai, sibling folder se nahi |
+| 3 | **Host composer `^2.0` + lock vcs se** — lock mein `"type": "path"` **zero** | Pehle lock path dist rakhta tha, yani clean runner par install hi nahi hota |
+| 4 | **`@khattakbits/ui` git dependency** (`git+https://…#v1.0.0`), vite alias `node_modules` par, Tailwind `@source` node_modules par, dev ke liye `KB_UI_PATH` | `file:../khattakbits-ui` clean runner par `npm ci` todta tha (vite alias + `@source` bhi wahi path) |
+| 5 | **CI: ek token, do repos** — `KB_GITHUB_TOKEN` (fallback `COMPOSER_GITHUB_TOKEN`), `url.insteadOf` https **aur** ssh; naya JS guard | npm lockfile GitHub dep ko `git+ssh` likhta hai magar fetch https se karta hai — dono forms rewrite hue baghair runner par SSH key maangi jati |
+| 6 | **Proof: clean clone** — `composer install` (core v2.0.0, koi symlink nahi) + `npm ci` (90 packages, `file:` zero) + build + **154 tests / 998 assertions** + pint 77 files, PHP 8.5.12 | GitHub Actions yahan se nazar nahi aata — is liye wohi steps isolated folder mein chalaye gaye. **8.3 locally NOT RUN** |
+
+> **`khattakbits/ui` `package.json` version `0.1.0` hai magar tag `v1.0.0`.** Task ke mutabiq
+> tag par koi code change nahi kiya. npm git dependency ke liye tag hi pin hai, version field
+> sirf metadata hai — magar v1.1.0 se pehle `package.json` ko `1.x` par lana chahiye, warna
+> "tag 1.0.0, package 0.1.0" confusion rehti hai.
 
 ### 16 Nov 2026 — v5 (D3/D4 done: core v2.0.0 tagged)
 

@@ -31,20 +31,36 @@ khattakbits/
 
 ### `khattakbits/core`
 
-Composer path repository se aata hai (`composer.json` → `repositories`), dev
-mein symlink, production mein `vcs` repository. Andar: user model, settings,
-mailer, audit, documents (attachments / recycle bin / activity), RBAC
-(`Authority`, `PermissionCatalog`), module registry, core routes, config
-defaults aur migrations.
+`composer.json` mein **`vcs` repository** (`^2.0`, tag `v2.0.0`) — yani clean
+machine par bhi install hota hai, sibling folder ki zaroorat nahi. Andar: user
+model, settings, mailer, audit, documents (attachments / recycle bin /
+activity), RBAC (`Authority`, `PermissionCatalog`), module registry, core
+routes, config defaults aur migrations.
+
+**Local dev (live edits):** sibling folder se symlink chahiye to override banayein —
+
+```bash
+php tools/make-composer-local.php                       # composer.local.json (gitignored)
+COMPOSER=composer.local.json composer update khattakbits/core --with-dependencies
+```
+
+`composer.json` ki `vcs` entry **kabhi** path se replace na karein — CI usi par
+chalti hai (RK6, `11` §6).
 
 Auto-discovered hai (`extra.laravel.providers`), is liye
 `bootstrap/providers.php` mein register **nahi** karna — warna double boot hoga.
 
 ### `@khattakbits/ui`
 
-`package.json` mein `file:../khattakbits-ui`. Source-consumed — koi build step
-nahi, host ka Vite seedha compile karta hai. Host imports `@core/...` likhte
-hain; `vite.config.js` ka alias usse package par le jata hai.
+`package.json` mein git dependency: `git+https://github.com/khattakbits/ui.git#v1.0.0`.
+Source-consumed — koi build step nahi, host ka Vite seedha `node_modules` se
+compile karta hai. Host imports `@core/...` likhte hain; `vite.config.js` ka
+alias usse package par le jata hai.
+
+**Local dev (live edits):** `KB_UI_PATH=../khattakbits-ui/src npm run dev` —
+alias sibling folder par chala jata hai. Tailwind ke liye `resources/css/app.css`
+mein sibling `@source` pehle se hai (CI mein woh path nahi hota aur Tailwind usay
+ignore karta hai).
 
 ## Setup
 
