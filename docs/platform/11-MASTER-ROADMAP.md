@@ -374,8 +374,18 @@ DB_CONNECTION=sqlite DB_DATABASE=/tmp/kb-schema.sqlite php artisan migrate:fresh
 # 5. Purana behaviour toota nahi
 php artisan test && vendor/bin/pint --test
 
-# 6. Tag maujood
+# 6. D3 — flag off par route table bilkul wohi (koi {tenant} nahi)
+php artisan route:list --json | jq -r '.[] | select(.uri | contains("{tenant}")) | .uri'
+# → khali output; core ke 15 routes (9 central + 6 tenant-scoped) bina prefix
+php artisan test --filter=CoreRoutesTest
+
+# 7. D3 — menu contract: har item par path, koi purana href nahi
+grep -rn "'href' =>" app/Modules/*/menu.php          # → zero hit
+php artisan test --filter=MenuBuilderTest
+
+# 8. Tags maujood
 git tag -l 'pre-*'   # → pre-extraction, pre-tenancy
+git tag -l 'v2.0.0'  # → khattakbits/core v2.0.0 (annotated)
 ```
 
 > **`migrate --pretend | grep -c "create table"` (v2) bhi galat tha** — woh statements ginta hai, aur `--pretend` ka output DB ke already-migrated state par depend karta hai (fresh DB par 23, migrated DB par 0). Sahi tareeqa: **files** folder ke hisaab se ginne, aur **tables** ek temporary SQLite `migrate:fresh` se. Wajah aur poora mechanism §4.1.1 / `03` D2.3 mein.
@@ -929,6 +939,21 @@ Order **dependency ke hisaab se** hai, priority ke nahi. #1–#4 aaj ho sakte ha
 ---
 
 ## 9. Changelog
+
+### 16 Nov 2026 — v5 (D3/D4 done: core v2.0.0 tagged)
+
+| # | Kya | Kyun |
+|---|---|---|
+| 1 | **Routes split live** — `KhattakBits\Core\Routing\CoreRoutes`: central 9 + tenant-scoped 6; tenant group `/{tenant}` ke andar **sirf** flag `true` par | Flag `false` (CP, starter kit, tests) par `route:list` diff = **121 routes, 0 added, 0 removed** — aaj ke URLs bilkul wohi |
+| 2 | **`menu.php` contract** — `path` (static, slug-free) + `href` (runtime); MenuBuilder payload mein dono, module entry par bhi; `path` ka fallback `href` (purani menu chalti rehti hai) | `AccountingDemo/routes.php` `href` par route register karta tha — slug `href` mein aane se route registration mein bake ho jata (tenant A ki routes, tenant B ki 404) |
+| 3 | **`mergeConfigFrom` docblock theek** — `config:cache` package defaults ko nahi girata | P0a mein verify hua tha; docblock ulta keh raha tha |
+| 4 | **`UPGRADE.md` + `CHANGELOG.md`** (core), **tag `v2.0.0`** (annotated, local — push nahi) | `03` D4; upgrade ke baghair koi product v2 par nahi jayega |
+| 5 | **Tests: 138 → 154** (689 → 998 assertions); pint host 77 / core 60 files PASS | `CoreRoutesTest` (9), `MenuBuilderTest` (7) |
+
+> **`tenantUrl()` / `tenantPath()` is version mein nahi hain** — `07` §5.2 ke woh helpers P5
+> (tenancy phase) mein aate hain. Is liye `MenuBuilder::hrefFor()` abhi `path` return karta hai
+> (ek seam), aur `UPGRADE.md` C1–C3/C6 ko "P5" mark karta hai, C4/C5 ko "ab". Jhoot bol kar
+> upgrade doc mein aise APIs likhna ke woh maujood nahi, product teams ko phansata.
 
 ### 16 Nov 2026 — v4 (D2 implemented: split live, D1 ke 2 FK band)
 

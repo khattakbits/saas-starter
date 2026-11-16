@@ -424,8 +424,8 @@ contract tor rahe hain.
 |---|---|---|---|
 | **D1** | **Step 0 — cross-DB FK fix** (5 migrations) | ✅ **Done** — branch `feat/cross-db-fk`, extraction se pehle. **Do jagah D2 mein pakdi gayin** (`email_templates.updated_by`, `DocumentColumns::add()`) — neeche D2.3.1 | `02` §5.5. Path-based tenancy se iska koi taalluq nahi, magar yeh **pehle** hona chahiye tha taake tenant DB par cross-DB FK na rahe. Verify ab code se hota hai, grep se nahi: `MigrationSplitTest::test_no_tenant_table_has_a_foreign_key_to_users` (discovery-based, fixed list nahi) |
 | **D2** | **Migration folder split** — `{central,tenant}` | ✅ **Done** — branch `feat/d2-migration-split`; 4 central / 11 tenant (+1 module) files, 23 tables | Aaj `loadMigrationsFrom()` **saari** migrations dono jagah chalata hai: `php artisan migrate` central par, `php artisan tenants:migrate` har tenant par. `users` central table hai magar har tenant DB mein bhi ban jati hai; `attachments` tenant table hai magar central mein bhi. `07` §7.1 ka split isay theek karta hai |
-| **D3** | **`khattakbits/core` v2.0.0 (MAJOR)** | ⬜ **Pending** | Do breaking changes: (a) core routes ka split (`07` §3.4 — `attachments` + `document-activity` tenant ke andar `{tenant}` ke saath), (b) `menu.php` contract mein `path` key (`07` §5.3) |
-| **D4** | **`UPGRADE.md`** | ⬜ **Pending** | D3 ke dono breaking changes ke liye codemod instructions. Bina iske har product ka upgrade manual hai |
+| **D3** | **`khattakbits/core` v2.0.0 (MAJOR)** | ✅ **Done** — branch `feat/d3-core-v2`, tag `v2.0.0` (annotated, local) | Do breaking changes: (a) core routes ka split (`07` §3.4 — `attachments` + `document-activity` tenant ke andar `{tenant}` ke saath, **sirf** `khattakbits.tenancy.enabled=true` par), (b) `menu.php` contract mein `path` key (`07` §5.3) |
+| **D4** | **`UPGRADE.md`** | ✅ **Done** — `khattakbits-core/UPGRADE.md` + `CHANGELOG.md` | D3 ke dono breaking changes ke liye codemod (C1–C7, har step par "kab"), verify commands, aur rollback |
 
 ## D2 · Migration split — exact inventory
 
@@ -644,6 +644,46 @@ woh chupchaap non-tenant route ban jayega aur `AttachmentController` central DB 
 **Route names na badlein.** `attachments.show` hi rahe — sirf URI badalta hai. Warna har host ke `route()`
 calls toot jayenge aur codemod ka scope barh jayega.
 
+#### D3.1.1 Dono modes — flag hi faisla karta hai
+
+D3.1 ka upar wala snippet **tenancy on** ka case hai. Flag `false` (control plane, single-tenant starter,
+tests) par URLs **aaj ke bilkul wohi** rehne chahiye — koi `{tenant}` nahi. Warna CP ke saare links, tests
+aur bookmarks toot jate.
+
+Mechanism wohi hai jo D2 ka hai (`khattakbits.tenancy.enabled`), implementation ek jagah — `CoreRoutes`:
+
+| `enabled` | Central routes | Tenant-scoped routes |
+|---|---|---|
+| `false` (default) | `/login`, `/profile`, … | `/attachments`, `/documents/{type}/{id}/views`, `/documents/{type}/{id}/activity` |
+| `true` | wohi | `/{tenant}/attachments`, `/{tenant}/documents/...` |
+
+```php
+// core/src/Routing/CoreRoutes.php — poora faisla yahan
+Route::middleware('web')->group(function () use ($tenancyEnabled): void {
+    self::guest();                                   // login + password reset — hamesha central
+
+    Route::middleware(['auth', EnsureUserActive::class])->group(function () use ($tenancyEnabled): void {
+        self::centralAuthenticated();                // logout + profile — hamesha central
+
+        if ($tenancyEnabled) {
+            Route::prefix('{tenant}')->group(static fn () => self::tenantScoped());
+        } else {
+            self::tenantScoped();                    // wohi 6 routes, bina prefix
+        }
+    });
+});
+```
+
+`routes/web.php` sirf `CoreRoutes::register((bool) config('khattakbits.tenancy.enabled', false));` hai.
+Do modes, ek hi route definition — copy-paste nahi, is liye dono modes drift nahi kar sakte.
+
+**Verification (P0 ka gate):** `route:list --json` ka diff baseline ke saath — flag `false` par **121 routes,
+0 added, 0 removed**; `{tenant}` ke liye filter khali. Test: `CoreRoutesTest` (dono flag values, `{tenant}`
+pehla segment, middleware, route names unchanged).
+
+**Jo yeh step nahi karta:** `InitializeTenancyByPath` middleware core register nahi karta — woh product ke
+`routes/web.php` mein `{tenant}` group par lagta hai (P5). Core ka kaam sirf URIs sahi jagah rakhna hai.
+
 ### D3.2 `menu.php` contract mein `path` key (`07` §5.3)
 
 Yeh subtle hai aur ise miss karna **production bug** hai. Aaj `AccountingDemo/routes.php:8` menu ka `href`
@@ -674,7 +714,30 @@ Host ka `routes.php` `path` par register karega aur route ko `{tenant}` group ke
 MINOR mein nahi ho sakta — aur agar galti se MINOR mein chala diya, to purane products ka `routes.php` `href`
 par register karta rahega aur **`path` key ko ignore karega**, yani menu dikhega magar route nahi milega.
 
+#### D3.2.1 Jo actually ship hua (v2.0.0)
+
+`MenuBuilder` ab har item par `path` **aur** `href` deta hai (module entry par bhi). `path` static hai;
+`href` ek hi jagah se aata hai — `MenuBuilder::hrefFor()`:
+
+```php
+private function hrefFor(string $path): string
+{
+    return $path;   // P5: tenantUrl($path) — slug prefixing
+}
+```
+
+Yani **v2.0.0 mein `href` = `path`** (aaj ke URLs bilkul wohi), aur slug prefixing P5 mein sirf isi function
+mein aayegi — tab `menu.php` files dobara touch nahi hongi. Yeh seam jaan boojh kar hai: `href` ka contract
+abhi tay ho jata hai, magar woh helper invent nahi kiya jo maujood nahi (`tenantUrl()` P5 ka kaam hai).
+
+**Backward compatibility:** purani `menu.php` (sirf `href`) crash nahi karti — `path` `href` se fallback hota
+hai. Magar us product ko `routes.php` phir bhi `path` par shift karna hoga, warna trap wapas aa jata hai.
+
 ## D4 · `UPGRADE.md` — kya likhna hai
+
+**Status: done** — `khattakbits-core/UPGRADE.md` (breaking changes, route split dono modes, `menu.php` path
+contract, migrations, C1–C7 codemod — har step par "kab" — verify commands, rollback) aur
+`khattakbits-core/CHANGELOG.md` (2.0.0). Neeche wohi requirements jo likhi gayi thin, taake review ho sake.
 
 Package repo mein `UPGRADE.md` (v1 → v2), teen sections:
 
@@ -696,6 +759,7 @@ revert + `composer update`. Yeh 10 minute ka kaam hona chahiye, nahi to koi upgr
 | **v1** | 12 Nov 2026 | Part A (attachment IDOR fix, forbidden demo route, CI, test run) + Part B (target layout, move order, namespace strategy, host consumption, checklist, risks) |
 | **v2** | 12 Nov 2026 | **Part C** — jo actually hua: steps 2–9 executed, 117 tests / 588 assertions, 8 deviations (migrations step 3 mein, `User` poora model, config duplicate, `Support\Users`, package base controller, Vite `dedupe`, `@core` alias, `dev-main` constraint), 2 cheezein jo nahi ki gayin, rollback, aakhri verification |
 | **v3** | 13 Nov 2026 | **Part D** — `07` §11.5 ke teen follow-up items: D1 Step 0 (done, verify command), **D2 migration split** (exact inventory: core 2 central/10 tenant, host 2 central/1 tenant = **4/11**; provider diff; 3 traps; filename immutability; split test), **D3 `core` v2.0.0** (route split with `{tenant}` first param, `menu.php` `path` key + why it is MAJOR), **D4 `UPGRADE.md`** (4 sections incl. rollback) |
+| **v4** | 16 Nov 2026 | **Part D executed** — D1 (5 migrations, + 2 jo D2 ne pakde), **D2** migration split live (`MigrationPaths`, flag, 23 tables, tests 117→138), **D3** core v2.0.0 (routes split dono modes mein, menu `path` contract, `mergeConfigFrom` docblock fix), **D4** `UPGRADE.md` + `CHANGELOG.md` + tag `v2.0.0`. Tests 138→154. Naye sections: D2.3.1 (D1 ke chhoote FK), D3.1.1 (dono modes), D3.2.1 (jo ship hua) |
 
 **Part D ka asar:** extraction **complete** hai — Part D usay **multi-tenant** banata hai, aur woh package ke
 public contract ko tor raha hai (routes + menu). Is liye yeh **v2.0.0 (MAJOR)** hai, aur isay `07` §12 ke effort
@@ -704,5 +768,6 @@ jagah count hoga.
 
 ---
 
-*Yeh document record hai — Part A/B/C executed, Part D planned. Part D ke teen items **pending** hain aur unka
-effort `07` §12 mein hai, is doc mein nahi.*
+*Yeh document record hai — Part A/B/C/D **executed**. Part D ke teenon items (D2 split, D3 `core` v2.0.0,
+D4 `UPGRADE.md`) mukammal hain; effort `07` §12 mein hai, is doc mein nahi. Baqi kaam (path-based tenancy,
+`tenants:migrate`, `tenantUrl()`) P5 ka hai — `11` §4.5.*
