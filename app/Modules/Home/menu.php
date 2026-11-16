@@ -11,7 +11,7 @@ return [
         [
             'title' => 'Doctypes',
             'items' => [
-                ['label' => 'Dashboard', 'href' => '/', 'can' => null],   // null = har login user
+                ['label' => 'Dashboard', 'path' => '/', 'can' => null],   // null = har login user
             ],
         ],
     ],

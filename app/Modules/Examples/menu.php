@@ -40,18 +40,18 @@ return [
         [
             'title' => 'Doctypes',
             'items' => [
-                ['label' => 'Demo Entries', 'href' => '/examples/entries', 'can' => 'examples.entries.view'],
+                ['label' => 'Demo Entries', 'path' => '/examples/entries', 'can' => 'examples.entries.view'],
             ],
         ],
         [
             'title' => 'Page types',
             'items' => [
-                ['label' => 'List', 'href' => '/examples/list', 'can' => null],
-                ['label' => 'Report', 'href' => '/examples/report', 'can' => null],
-                ['label' => 'New form', 'href' => '/examples/new-form', 'can' => null],
-                ['label' => 'Submitted form', 'href' => '/examples/submitted', 'can' => null],
-                ['label' => 'Settings', 'href' => '/examples/settings', 'can' => null],
-                ['label' => 'Empty states', 'href' => '/examples/empty', 'can' => null],
+                ['label' => 'List', 'path' => '/examples/list', 'can' => null],
+                ['label' => 'Report', 'path' => '/examples/report', 'can' => null],
+                ['label' => 'New form', 'path' => '/examples/new-form', 'can' => null],
+                ['label' => 'Submitted form', 'path' => '/examples/submitted', 'can' => null],
+                ['label' => 'Settings', 'path' => '/examples/settings', 'can' => null],
+                ['label' => 'Empty states', 'path' => '/examples/empty', 'can' => null],
             ],
         ],
     ],

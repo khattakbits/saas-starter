@@ -27,7 +27,7 @@ foreach ($spec as $title => $groups) {
         foreach ($labels as $label) {
             $items[] = [
                 'label' => $label,
-                'href' => '/accounting-demo/'.Str::slug($title).'/'.Str::slug($label),
+                'path' => '/accounting-demo/'.Str::slug($title).'/'.Str::slug($label),
                 'can' => null,
                 'group' => $group ?: null,
             ];

@@ -25,25 +25,25 @@ return [
         [
             'title' => 'Doctypes',
             'items' => [
-                ['label' => 'Users', 'href' => '/settings/users', 'can' => 'settings.users.view'],
-                ['label' => 'Roles', 'href' => '/settings/roles', 'can' => 'settings.roles.view'],
-                ['label' => 'Recycle Bin', 'href' => '/settings/recycle-bin', 'can' => 'settings.recycle_bin.view'],
-                ['label' => 'Email Accounts', 'href' => '/settings/email-accounts', 'can' => 'settings.email_accounts.view'],
-                ['label' => 'Email Templates', 'href' => '/settings/email-templates', 'can' => 'settings.email_templates.view'],
+                ['label' => 'Users', 'path' => '/settings/users', 'can' => 'settings.users.view'],
+                ['label' => 'Roles', 'path' => '/settings/roles', 'can' => 'settings.roles.view'],
+                ['label' => 'Recycle Bin', 'path' => '/settings/recycle-bin', 'can' => 'settings.recycle_bin.view'],
+                ['label' => 'Email Accounts', 'path' => '/settings/email-accounts', 'can' => 'settings.email_accounts.view'],
+                ['label' => 'Email Templates', 'path' => '/settings/email-templates', 'can' => 'settings.email_templates.view'],
             ],
         ],
         [
             'title' => 'Reports',
             'items' => [
-                ['label' => 'Audit Log', 'href' => '/settings/audit-log', 'can' => 'settings.audit.view'],
-                ['label' => 'Email Log', 'href' => '/settings/email-log', 'can' => 'settings.email_log.view'],
+                ['label' => 'Audit Log', 'path' => '/settings/audit-log', 'can' => 'settings.audit.view'],
+                ['label' => 'Email Log', 'path' => '/settings/email-log', 'can' => 'settings.email_log.view'],
             ],
         ],
         [
             'title' => 'Settings',
             'items' => [
-                ['label' => 'System Settings', 'href' => '/settings/system', 'can' => 'settings.system.view'],
-                ['label' => 'Email Settings', 'href' => '/settings/email', 'can' => 'settings.email.view'],
+                ['label' => 'System Settings', 'path' => '/settings/system', 'can' => 'settings.system.view'],
+                ['label' => 'Email Settings', 'path' => '/settings/email', 'can' => 'settings.email.view'],
             ],
         ],
     ],
